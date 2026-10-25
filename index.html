@@ -3,229 +3,234 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>South Africa Airspace</title>
+<title>South Africa Airspace — ATNS</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.2/togeojson.js"></script>
 <style>
-  :root {
-    --bg: #0b1120;
-    --panel: rgba(15, 23, 42, 0.94);
-    --border: rgba(148, 163, 184, 0.18);
-    --text: #f1f5f9;
-    --muted: #94a3b8;
-    --accent: #38bdf8;
-    --green: #4ade80;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body, #map { height: 100%; background: var(--bg); font-family: 'Segoe UI', system-ui, sans-serif; }
+:root{--sidebar-w:340px;--border:#e5e7eb;--hover:#f9fafb;--t1:#111827;--t2:#6b7280;--t3:#9ca3af}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:var(--t1)}
+#app{display:flex;height:100vh;overflow:hidden}
 
-  /* Status pill */
-  #status {
-    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-    z-index: 1100; background: var(--panel); color: var(--text);
-    padding: 7px 18px; border-radius: 999px; font-size: 13px; font-weight: 500;
-    border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,.45);
-    backdrop-filter: blur(12px); transition: opacity .4s;
-  }
+/* Sidebar */
+#sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column}
+#sidebar-header{padding:14px 18px 12px;border-bottom:1px solid var(--border)}
+#sidebar-header h1{font-size:14px;font-weight:700;letter-spacing:-.01em}
+#sidebar-header p{font-size:11px;color:var(--t2);margin-top:2px}
+#search-box{padding:10px 14px;border-bottom:1px solid var(--border);position:relative}
+#search-input{width:100%;padding:7px 10px 7px 30px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none;font-family:inherit;transition:border-color .15s,box-shadow .15s}
+#search-input:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+#search-icon{position:absolute;left:24px;top:50%;transform:translateY(-50%);color:var(--t3);pointer-events:none;font-size:13px}
+#filters{padding:10px 14px;border-bottom:1px solid var(--border)}
+#filters-title{font-size:10px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+#filter-chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:12px;font-size:10px;font-weight:600;border:1px solid var(--border);background:#fff;color:var(--t2);cursor:pointer;transition:all .15s;user-select:none}
+.chip.on{color:#fff;border-color:currentColor}
+.chip .chip-count{margin-left:4px;opacity:.75;font-weight:500}
+#results-info{padding:8px 16px;font-size:11px;color:var(--t2);border-bottom:1px solid var(--border);background:#fafafa}
+#results{flex:1;overflow-y:auto;scrollbar-width:thin}
+#results::-webkit-scrollbar{width:6px}
+#results::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
+.result-item{padding:7px 16px;display:flex;align-items:flex-start;gap:8px;cursor:pointer;border-left:3px solid transparent;transition:background .1s,border-color .1s}
+.result-item:hover{background:var(--hover)}
+.result-item.selected{background:#eff6ff;border-left-color:#3b82f6}
+.result-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.result-body{flex:1;min-width:0}
+.result-name{font-size:12px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.result-meta{font-size:10px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.result-freq{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:9px;color:#1e40af;margin-top:2px}
 
-  /* Custom layer control */
-  .leaflet-control-layers {
-    background: var(--panel) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 12px !important;
-    box-shadow: 0 12px 32px rgba(0,0,0,.5) !important;
-    backdrop-filter: blur(12px);
-    color: var(--text) !important;
-    min-width: 210px;
-  }
-  .leaflet-control-layers-expanded { padding: 12px 14px 10px !important; }
-  .leaflet-control-layers-base label,
-  .leaflet-control-layers-overlays label {
-    color: var(--text) !important; font-size: 13px; margin: 3px 0;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .leaflet-control-layers-separator { border-top: 1px solid var(--border) !important; margin: 8px 0 !important; }
-  .leaflet-control-layers-toggle { background-color: var(--panel) !important; border-radius: 10px !important; }
+/* Map */
+#map-wrap{flex:1;position:relative}
+#map{position:absolute;inset:0}
+.leaflet-tile-pane{filter:saturate(.25) brightness(1.05) contrast(.85);opacity:.8}
 
-  /* Zoom buttons */
-  .leaflet-bar {
-    border: 1px solid var(--border) !important;
-    border-radius: 10px !important;
-    overflow: hidden;
-    box-shadow: 0 8px 24px rgba(0,0,0,.4) !important;
-  }
-  .leaflet-bar a {
-    background: var(--panel) !important; color: var(--text) !important;
-    border-bottom: 1px solid var(--border) !important;
-    width: 34px !important; height: 34px !important; line-height: 34px !important;
-    font-size: 16px !important;
-  }
-  .leaflet-bar a:hover { background: #1e293b !important; color: #fff !important; }
+/* Popup */
+.leaflet-popup-content-wrapper{border-radius:8px;padding:0!important;box-shadow:0 10px 40px rgba(0,0,0,.18),0 2px 8px rgba(0,0,0,.08);overflow:hidden}
+.leaflet-popup-content{margin:0!important;padding:0;font-family:inherit;max-height:500px;overflow-y:auto}
+.leaflet-popup-tip{box-shadow:none}
+.leaflet-popup-close-button{color:#9ca3af!important;font-size:22px!important;padding:4px 8px!important;width:auto!important;height:auto!important}
+.leaflet-popup-close-button:hover{color:#111827!important}
+.as-popup{font-size:12px;color:var(--t1);line-height:1.45}
+.as-popup-header{padding:12px 32px 12px 14px;background:#fafafa;border-bottom:1px solid var(--border)}
+.as-popup-type{display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;margin-bottom:3px}
+.as-popup-type .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px}
+.as-popup-title{font-size:13px;font-weight:600;line-height:1.3}
+.as-popup-section{padding:9px 14px;border-bottom:1px solid var(--border)}
+.as-popup-section:last-child{border-bottom:none}
+.as-popup-label{font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--t3);margin-bottom:4px}
+.as-popup-value{font-weight:500}
+.freq-chip{display:inline-block;padding:3px 8px;margin:2px 4px 2px 0;background:#eff6ff;color:#1e40af;border-radius:4px;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:11px;font-weight:600}
+.as-popup-row{margin:2px 0;font-size:11px}
+.as-popup-key{color:var(--t2)}
+.as-popup-desc{font-size:11px;color:#374151;max-height:200px;overflow-y:auto;padding:4px 0;line-height:1.5}
+.as-popup-desc table{border-collapse:collapse;width:100%}
+.as-popup-desc td,.as-popup-desc th{padding:2px 4px;border:1px solid var(--border)}
 
-  /* Popups */
-  .leaflet-popup-content-wrapper {
-    background: #1e293b; color: var(--text);
-    border-radius: 12px; border: 1px solid var(--border);
-    box-shadow: 0 16px 40px rgba(0,0,0,.55);
-  }
-  .leaflet-popup-tip { background: #1e293b; }
-  .leaflet-popup-content { margin: 14px 16px; min-width: 180px; }
-  .p-name { font-size: 16px; font-weight: 700; color: #f8fafc; margin-bottom: 6px; }
-  .p-limits { font-size: 13px; color: var(--accent); margin-bottom: 8px; font-weight: 500; }
-  .p-freq { font-size: 13px; line-height: 1.55; color: #e2e8f0; }
-  .p-freq span { color: var(--muted); display: inline-block; min-width: 72px; }
+/* Map controls */
+#map-controls{position:absolute;top:12px;right:12px;z-index:400;display:flex;flex-direction:column;gap:6px}
+.map-btn{background:#fff;border:1px solid var(--border);border-radius:6px;padding:7px 11px;font-size:12px;font-weight:500;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08);font-family:inherit;color:var(--t1);transition:background .15s,transform .05s}
+.map-btn:hover{background:#f9fafb}
+.map-btn:active{transform:scale(.98)}
 
-  /* Airport labels */
-  .ap-label {
-    background: none !important; border: none !important; box-shadow: none !important;
-    font: 700 11px/1 'Segoe UI', system-ui, sans-serif; color: #f8fafc;
-    text-shadow: 0 0 5px #000, 0 0 5px #000, 0 1px 3px #000;
-  }
-  .ap-label::before { display: none; }
+/* Loading */
+#loading{position:absolute;inset:0;background:#fff;z-index:5000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .3s}
+#loading.hidden{opacity:0;pointer-events:none}
+.spinner{width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#3b82f6;border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading-text{font-size:13px;color:var(--t2)}
+#loading-error{max-width:420px;padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#991b1b;font-size:12px;line-height:1.5;white-space:pre-wrap}
 
-  /* Legend */
-  #legend {
-    position: absolute; bottom: 28px; left: 14px; z-index: 1000;
-    background: var(--panel); color: var(--text); padding: 12px 16px;
-    border-radius: 12px; font-size: 12px; line-height: 1.65;
-    border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,.45);
-    backdrop-filter: blur(12px);
-  }
-  #legend .title { font-weight: 600; color: var(--accent); margin-bottom: 6px; letter-spacing: .03em; font-size: 11px; }
-  #legend b { display: inline-block; width: 11px; height: 11px; margin-right: 7px; vertical-align: middle; border-radius: 2px; }
+/* Airport labels */
+.airport-label{background:transparent!important;border:none!important;box-shadow:none!important;font-family:-apple-system,sans-serif!important;font-size:10px!important;font-weight:600!important;color:#1e293b!important;padding:0!important;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff!important;letter-spacing:.02em!important}
+.airport-label::before{display:none!important}
+
+/* Mobile */
+@media(max-width:768px){#app{flex-direction:column}#sidebar{width:100%;min-width:0;max-height:40vh;border-right:none;border-bottom:1px solid var(--border)}#map-wrap{min-height:60vh}}
 </style>
 </head>
 <body>
-<div id="map"></div>
-<div id="status">Loading…</div>
-<div id="legend"></div>
-
+<div id="app">
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <h1>South Africa Airspace</h1>
+      <p>ATNS · search, filter, or click a shape</p>
+    </div>
+    <div id="search-box">
+      <span id="search-icon">🔍</span>
+      <input id="search-input" type="text" placeholder="Search name, type, frequency…" autocomplete="off">
+    </div>
+    <div id="filters">
+      <div id="filters-title">Filter by type</div>
+      <div id="filter-chips"></div>
+    </div>
+    <div id="results-info">Loading…</div>
+    <div id="results"></div>
+  </aside>
+  <main id="map-wrap">
+    <div id="map"></div>
+    <div id="map-controls">
+      <button class="map-btn" id="btn-basemap">🗺️ Street</button>
+      <button class="map-btn" id="btn-fit">📍 Fit SA</button>
+    </div>
+    <div id="loading">
+      <div class="spinner"></div>
+      <div id="loading-text">Loading airspaces…</div>
+    </div>
+  </main>
+</div>
 <script>
-const KMZ = 'RSA DATA -01OCT2026.kmz';
+/* ============ CONFIG ============ */
+const KMZ_FILENAME = 'RSA DATA -01OCT2026.kmz';
 
-const statusEl = document.getElementById('status');
-const setStatus = (t, c = '#f1f5f9') => { statusEl.textContent = t; statusEl.style.color = c; };
-
-// ---------- Map + panes ----------
-const map = L.map('map', {
-  maxZoom: 16,
-  zoomControl: false,
-  preferCanvas: true
-});
-L.control.zoom({ position: 'topright' }).addTo(map);
-
-// Higher pane so airports & waypoints always sit above airspaces
-map.createPane('airports');
-map.getPane('airports').style.zIndex = 650;
-map.createPane('points');
-map.getPane('points').style.zIndex = 640;
-
-// Base layers – Dark is default
-const baseLayers = {
-  'Dark': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '© OpenStreetMap © CARTO', maxZoom: 16
-  }),
-  'Light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '© OpenStreetMap © CARTO', maxZoom: 16
-  }),
-  'Esri Grey': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-    attribution: 'Esri', maxNativeZoom: 16, maxZoom: 16
-  })
+const TYPE_INFO = {
+  FIR:  {label:'FIR',   colour:'#64748b', description:'Flight Information Region'},
+  CTA:  {label:'CTA',   colour:'#a78bfa', description:'Control Area'},
+  TMA:  {label:'TMA',   colour:'#818cf8', description:'Terminal Control Area'},
+  CTR:  {label:'CTR',   colour:'#3b82f6', description:'Control Zone'},
+  ATZ:  {label:'ATZ',   colour:'#06b6d4', description:'Aerodrome Traffic Zone'},
+  SRA:  {label:'SRA',   colour:'#22c55e', description:'Special Rules Area'},
+  FAR:  {label:'FAR',   colour:'#ef4444', description:'Restricted Area'},
+  FAD:  {label:'FAD',   colour:'#f59e0b', description:'Danger Area'},
+  FAP:  {label:'FAP',   colour:'#b91c1c', description:'Prohibited Area'},
+  OTHER:{label:'Other', colour:'#94a3b8', description:'Other airspace'}
 };
-baseLayers['Dark'].addTo(map);          // ← DEFAULT
-map.fitBounds([[-35.0, 15.5], [-22.0, 33.5]]);
 
-// ---------- Classification ----------
-function classify(name = '') {
-  const n = (name || '').toUpperCase();
-  if (/PROHIBITED|^FAP\b/.test(n)) return { type: 'prohibited', prio: 90, color: '#b91c1c', fill: 0.32, interactive: true };
-  if (/RESTRICTED|^FAR\b|HARBOUR/.test(n)) return { type: 'restricted', prio: 80, color: '#dc2626', fill: 0.26, interactive: true };
-  if (/DANGER|^FAD\b/.test(n)) return { type: 'danger', prio: 70, color: '#d97706', fill: 0.24, interactive: true };
-  if (/ATZ/.test(n)) return { type: 'atz', prio: 60, color: '#06b6d4', fill: 0.22, interactive: true };
-  if (/CTR/.test(n)) return { type: 'ctr', prio: 55, color: '#3b82f6', fill: 0.22, interactive: true };
-  if (/SRA|SPECIAL RULE/.test(n)) return { type: 'sra', prio: 50, color: '#a855f7', fill: 0.18, interactive: true };
-  if (/TMA/.test(n)) return { type: 'tma', prio: 40, color: '#8b5cf6', fill: 0.16, interactive: true };
-  if (/CTA|ACC |FIS /.test(n)) return { type: 'cta', prio: 25, color: '#6366f1', fill: 0.10, interactive: false }; // non-interactive
-  if (/FIR|UIR/.test(n)) return { type: 'fir', prio: 5, color: '#64748b', fill: 0.04, interactive: false };  // non-interactive
-  return { type: 'other', prio: 15, color: '#64748b', fill: 0.08, interactive: false };
-}
-
-function styleFor(f) {
-  const c = classify(f.properties?.name || f.properties?.Name || '');
-  return {
-    color: c.color,
-    weight: c.interactive ? 2.0 : 1.2,
-    opacity: 0.9,
-    fillColor: c.color,
-    fillOpacity: c.fill,
-    interactive: c.interactive
-  };
-}
-
-// ---------- Parse limits + frequencies ----------
-function parseDesc(text = '') {
-  const limits = (text.match(/(?:GND|SFC|FL\d+|\d+\s*FT(?:\s*(?:AGL|ALT|AMSL))?)\s*[-–to]+\s*(?:FL\d+|\d+\s*FT(?:\s*(?:AGL|ALT|AMSL))?|UNL)/i) || [])[0] || '';
-  const freqLines = [];
-  const re = /(?:Freq[:\s]*)?(\d{3}\.\d{1,3}|\d{3})\s*(?:MHz)?(?:\s*\(([^)]+)\))?/gi;
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    const freq = m[1];
-    const label = (m[2] || '').trim();
-    freqLines.push({ freq, label });
+/* ============ HELPERS ============ */
+function detectType(name, props = {}) {
+  const explicit = props.type || props.Type || props.airspaceType || props.AirspaceType;
+  if (explicit) {
+    const e = String(explicit).toUpperCase();
+    if (TYPE_INFO[e]) return e;
+    if (/PROHIBITED/.test(e)) return 'FAP';
+    if (/RESTRICTED/.test(e)) return 'FAR';
+    if (/DANGER/.test(e)) return 'FAD';
+    if (/SPECIAL RULE/.test(e)) return 'SRA';
+    if (/CONTROL ZONE|CTR/.test(e)) return 'CTR';
+    if (/TERMINAL/.test(e)) return 'TMA';
+    if (/CONTROL AREA|CTA/.test(e)) return 'CTA';
+    if (/TRAFFIC ZONE|ATZ/.test(e)) return 'ATZ';
+    if (/FLIGHT INFO|FIR/.test(e)) return 'FIR';
   }
-  // de-dupe
-  const seen = new Set();
-  const unique = freqLines.filter(f => {
-    const k = f.freq + f.label;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
+  const u = String(name || '').toUpperCase().trim();
+  if (/^FAP\b/.test(u)) return 'FAP';
+  if (/^FAR\b/.test(u)) return 'FAR';
+  if (/^FAD\b/.test(u)) return 'FAD';
+  if (/\bSRA\b|SPECIAL RULE/.test(u)) return 'SRA';
+  if (/\bCTR\b|CONTROL ZONE/.test(u)) return 'CTR';
+  if (/\bTMA\b|TERMINAL/.test(u)) return 'TMA';
+  if (/\bCTA\b|CONTROL AREA/.test(u)) return 'CTA';
+  if (/\bATZ\b|TRAFFIC ZONE/.test(u)) return 'ATZ';
+  if (/\bFIR\b|\bUIR\b|FLIGHT INFO/.test(u)) return 'FIR';
+  return 'OTHER';
+}
+
+function sanitizeHtml(html) {
+  if (!html) return '';
+  const d = document.createElement('div');
+  d.innerHTML = String(html);
+  d.querySelectorAll('script,style,iframe,object,embed').forEach(el => el.remove());
+  d.querySelectorAll('*').forEach(el => {
+    [...el.attributes].forEach(a => {
+      if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+      if (a.name === 'href' && /^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name);
+    });
   });
-  return { limits: limits.replace(/\s+/g, ' '), freqs: unique.slice(0, 6) };
+  return d.innerHTML;
 }
 
-function airspacePopup(f) {
-  const name = f.properties?.name || f.properties?.Name || 'Airspace';
-  const desc = f.properties?.description || f.properties?.Description || '';
-  const { limits, freqs } = parseDesc(desc);
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-  let html = `<div class="p-name">${name}</div>`;
-  if (limits) html += `<div class="p-limits">${limits}</div>`;
-  if (freqs.length) {
-    html += `<div class="p-freq">`;
-    freqs.forEach(fr => {
-      const lbl = fr.label ? fr.label : 'Freq';
-      html += `<div><span>${lbl}</span>${fr.freq} MHz</div>`;
-    });
-    html += `</div>`;
+function extractFrequencies(obj) {
+  const parts = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (v != null && typeof v !== 'object') parts.push(String(v));
   }
-  return html;
-}
-
-function airportPopup(icao, desc = '') {
-  const { freqs } = parseDesc(desc);
-  let html = `<div class="p-name">${icao}</div>`;
-  if (freqs.length) {
-    html += `<div class="p-freq">`;
-    freqs.forEach(fr => {
-      // try to guess role from label
-      let role = fr.label || 'Frequency';
-      if (!fr.label) {
-        // fallback guess
-        role = 'Tower';
-      }
-      html += `<div><span>${role}</span>${fr.freq} MHz</div>`;
-    });
-    html += `</div>`;
-  } else {
-    html += `<div class="p-freq" style="color:var(--muted)">No frequency data in KMZ</div>`;
+  const text = parts.join(' ');
+  const matches = text.match(/\b1[0-3][0-9][.,]\d{1,3}\b/g) || [];
+  const seen = new Set(), out = [];
+  for (const m of matches) {
+    const n = parseFloat(m.replace(',', '.'));
+    if (n >= 108 && n <= 137) {
+      const s = n.toFixed(3);
+      if (!seen.has(s)) { seen.add(s); out.push(s); }
+    }
   }
-  return html;
+  return out.sort();
 }
 
-// ---------- Hard-coded airports (positions) ----------
+function computeArea(feature) {
+  const g = feature.geometry;
+  if (!g) return 0;
+  const rings = g.type === 'Polygon' ? [g.coordinates[0]] :
+                g.type === 'MultiPolygon' ? g.coordinates.map(c => c[0]) : [];
+  let total = 0;
+  for (const ring of rings) {
+    if (!ring || !ring.length) continue;
+    let a = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      a += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
+    }
+    total += Math.abs(a / 2);
+  }
+  return total;
+}
+
+/* ============ MAP ============ */
+const map = L.map('map', {maxZoom: 16, minZoom: 4, zoomControl: true});
+const basemaps = {
+  'Street':   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OpenStreetMap', maxZoom:19}),
+  'Terrain':  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {attribution:'© OpenTopoMap', maxZoom:17}),
+  'Outdoor':  L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', {attribution:'© CyclOSM', maxZoom:19}),
+  'Blank':    L.gridLayer({attribution:''})
+};
+let currentBasemap = 'Street';
+basemaps[currentBasemap].addTo(map);
+map.fitBounds([[-35, 16], [-22, 33]]);
+
+/* Airports */
 const AIRPORTS = [
   ['FAAB',-28.57331,16.53433],['FABB',-26.24289,28.30078],['FABE',-32.89722,27.27917],
   ['FABL',-29.09673,26.30064],['FABM',-28.24861,28.33611],['FABW',-32.20833,22.93889],
@@ -250,168 +255,300 @@ const AIRPORTS = [
   ['FAWI',-25.83378,29.19263],['FAWK',-25.82826,28.22275],['FAWN',-33.76972,18.74000],
   ['FAYP',-33.90099,18.49749]
 ];
+AIRPORTS.forEach(([id, la, lo]) =>
+  L.circleMarker([la, lo], {radius:3.5, color:'#fff', weight:1.5, fillColor:'#0f172a', fillOpacity:1, interactive:false})
+   .bindTooltip(id, {permanent:true, direction:'right', className:'airport-label', offset:[5,0]})
+   .addTo(map));
 
-// Will be filled from KMZ
-const aerodromeDesc = {};
+/* ============ STATE ============ */
+const state = {
+  items: [],
+  selected: null,
+  activeTypes: new Set(Object.keys(TYPE_INFO)),
+  searchQuery: ''
+};
+const airspaceLayers = new Map();
 
-const airportLayer = L.layerGroup();
-AIRPORTS.forEach(([id, la, lo]) => {
-  const m = L.circleMarker([la, lo], {
-    radius: 5,
-    color: '#f8fafc',
-    weight: 1.5,
-    fillColor: '#0ea5e9',
-    fillOpacity: 1,
-    pane: 'airports'           // ← high z-index pane
-  });
-  m.bindTooltip(id, {
-    permanent: true,
-    direction: 'right',
-    className: 'ap-label',
-    offset: [7, 0]
-  });
-  m.on('click', () => {
-    m.bindPopup(airportPopup(id, aerodromeDesc[id] || ''), { maxWidth: 260 }).openPopup();
-  });
-  airportLayer.addLayer(m);
-});
-airportLayer.addTo(map);
+/* ============ PARSING ============ */
+function parseAirspace(feature) {
+  const p = feature.properties || {};
+  const name = p.Name || p.name || p.NAME || p.title || p.TITLE || 'Unnamed airspace';
+  const type = detectType(name, p);
+  const upper = p.UpperLimit || p.upperLimit || p.upper || p.Upper || p.UPPER || p['Upper Limit'] || '';
+  const lower = p.LowerLimit || p.lowerLimit || p.lower || p.Lower || p.LOWER || p['Lower Limit'] || '';
+  const vertical = (upper || lower) ? `${lower || '?'} – ${upper || '?'}` : '';
+  const cls = p.Class || p.class || p.CLASS || p.airspaceClass || p.AirspaceClass || '';
+  const description = p.Description || p.description || '';
+  const freqs = extractFrequencies(p);
 
-// ---------- Load KMZ ----------
-async function load() {
-  try {
-    setStatus('Loading KMZ…');
-    const res = await fetch(KMZ);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const zip = await JSZip.loadAsync(await res.blob());
+  const skipKeys = new Set(['Name','name','NAME','title','TITLE','Description','description',
+    'UpperLimit','upperLimit','upper','Upper','UPPER','Upper Limit',
+    'LowerLimit','lowerLimit','lower','Lower','LOWER','Lower Limit',
+    'Class','class','CLASS','airspaceClass','AirspaceClass']);
+  const extras = [];
+  for (const [k, v] of Object.entries(p)) {
+    if (skipKeys.has(k) || v == null || v === '' || typeof v === 'object') continue;
+    extras.push([k, String(v)]);
+  }
 
-    const kmlName = Object.keys(zip.files).find(f => f.toLowerCase().endsWith('.kml'));
-    if (!kmlName) throw new Error('No KML in file');
+  return {feature, name, type, vertical, cls, description, freqs, extras, area: computeArea(feature)};
+}
 
-    setStatus('Parsing…');
-    const kml = new DOMParser().parseFromString(await zip.files[kmlName].async('text'), 'text/xml');
-    const gj = toGeoJSON.kml(kml);
-    const features = gj.features || [];
+/* ============ POPUP ============ */
+function popupHtml(item) {
+  const t = TYPE_INFO[item.type] || TYPE_INFO.OTHER;
+  let h = `<div class="as-popup"><div class="as-popup-header">
+    <div class="as-popup-type" style="color:${t.colour}">
+      <span class="dot" style="background:${t.colour}"></span>${t.label}${item.cls ? ' · ' + escapeHtml(item.cls) : ''}
+    </div>
+    <div class="as-popup-title">${escapeHtml(item.name)}</div>
+  </div>`;
 
-    // Collect aerodrome descriptions for frequency data
-    features.forEach(f => {
-      if (f.geometry?.type !== 'Point') return;
-      const name = (f.properties?.name || f.properties?.Name || '').toUpperCase().trim();
-      if (/^FA[A-Z]{2}$/.test(name)) {
-        aerodromeDesc[name] = f.properties?.description || f.properties?.Description || '';
-      }
-    });
+  if (item.vertical) h += `<div class="as-popup-section"><div class="as-popup-label">Vertical Limits</div><div class="as-popup-value">${escapeHtml(item.vertical)}</div></div>`;
 
-    const polys = features.filter(f => f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon'));
-    const points = features.filter(f => f.geometry?.type === 'Point' && !/^FA[A-Z]{2}$/.test((f.properties?.name || '').toUpperCase()));
+  if (item.freqs.length) h += `<div class="as-popup-section"><div class="as-popup-label">Frequencies</div>${item.freqs.map(f => `<span class="freq-chip">${f} MHz</span>`).join('')}</div>`;
 
-    // Sort so higher priority (interactive) are last → on top
-    polys.sort((a, b) => classify(a.properties?.name || '').prio - classify(b.properties?.name || '').prio);
+  if (item.extras.length) h += `<div class="as-popup-section"><div class="as-popup-label">Details</div>${item.extras.map(([k, v]) => {
+    const disp = /<[a-z]/i.test(v) ? sanitizeHtml(v) : escapeHtml(v);
+    return `<div class="as-popup-row"><span class="as-popup-key">${escapeHtml(k)}:</span> ${disp}</div>`;
+  }).join('')}</div>`;
 
-    // Layer groups
-    const L_fir = L.layerGroup();
-    const L_cta = L.layerGroup();
-    const L_tma = L.layerGroup();
-    const L_ctr = L.layerGroup();
-    const L_sra = L.layerGroup();
-    const L_rest = L.layerGroup();
-    const L_dang = L.layerGroup();
-    const L_proh = L.layerGroup();
-    const L_other = L.layerGroup();
+  if (item.description) {
+    const d = String(item.description);
+    const rendered = /<[a-z][\s\S]*>/i.test(d) ? sanitizeHtml(d) : escapeHtml(d).replace(/\n/g, '<br>');
+    h += `<div class="as-popup-section"><div class="as-popup-label">Notes</div><div class="as-popup-desc">${rendered}</div></div>`;
+  }
+  return h + '</div>';
+}
 
-    polys.forEach(f => {
-      const name = f.properties?.name || f.properties?.Name || '';
-      const c = classify(name);
-      const layer = L.geoJSON(f, {
-        style: () => styleFor(f),
-        onEachFeature: (feat, lyr) => {
-          if (!c.interactive) return; // big FIRs/CTAs never get events
-          lyr.bindPopup(airspacePopup(feat), { maxWidth: 280 });
-          lyr.on('mouseover', e => {
-            e.target.setStyle({ weight: 3.2, fillOpacity: Math.min(0.42, c.fill + 0.14) });
-            e.target.bringToFront();
-          });
-          lyr.on('mouseout', e => e.target.setStyle(styleFor(feat)));
-        }
-      });
-
-      if (c.type === 'fir') L_fir.addLayer(layer);
-      else if (c.type === 'cta') L_cta.addLayer(layer);
-      else if (c.type === 'tma') L_tma.addLayer(layer);
-      else if (c.type === 'ctr' || c.type === 'atz') L_ctr.addLayer(layer);
-      else if (c.type === 'sra') L_sra.addLayer(layer);
-      else if (c.type === 'restricted') L_rest.addLayer(layer);
-      else if (c.type === 'danger') L_dang.addLayer(layer);
-      else if (c.type === 'prohibited') L_proh.addLayer(layer);
-      else L_other.addLayer(layer);
-    });
-
-    // Waypoints / navaids – high pane, off by default
-    const pointLayer = L.geoJSON({ type: 'FeatureCollection', features: points }, {
-      pointToLayer: (f, ll) => L.circleMarker(ll, {
-        radius: 3.2, color: '#475569', weight: 1,
-        fillColor: '#64748b', fillOpacity: 0.85,
-        pane: 'points'
-      }),
-      onEachFeature: (f, lyr) => {
-        const name = f.properties?.name || f.properties?.Name || 'Point';
-        lyr.bindPopup(`<div class="p-name">${name}</div>`);
-      }
-    });
-
-    // Default on
-    L_fir.addTo(map);
-    L_cta.addTo(map);
-    L_tma.addTo(map);
-    L_ctr.addTo(map);
-    L_sra.addTo(map);
-    L_rest.addTo(map);
-    L_dang.addTo(map);
-    L_proh.addTo(map);
-
-    const overlays = {
-      'FIRs (pass-through)': L_fir,
-      'CTAs / ACC / FIS': L_cta,
-      'TMAs': L_tma,
-      'CTRs & ATZs': L_ctr,
-      'Special Rules': L_sra,
-      'Restricted': L_rest,
-      'Danger': L_dang,
-      'Prohibited': L_proh,
-      'Other': L_other,
-      'Airports': airportLayer,
-      'Waypoints / Navaids': pointLayer
-    };
-
-    L.control.layers(baseLayers, overlays, {
-      collapsed: false,
-      position: 'topright'
-    }).addTo(map);
-
-    setStatus('Ready', '#4ade80');
-    setTimeout(() => statusEl.style.opacity = '0', 2800);
-  } catch (err) {
-    console.error(err);
-    setStatus('Error: ' + err.message, '#f87171');
+/* ============ STYLING ============ */
+function styleFor(item, mode = 'base') {
+  const t = TYPE_INFO[item.type] || TYPE_INFO.OTHER;
+  const base = {color: t.colour, fillColor: t.colour};
+  switch (mode) {
+    case 'hover':    return {...base, weight: 3,   fillOpacity: 0.25, opacity: 1};
+    case 'selected': return {...base, weight: 3,   fillOpacity: 0.35, opacity: 1};
+    case 'dimmed':   return {...base, weight: 1,   fillOpacity: 0.02, opacity: 0.15};
+    default:         return {...base, weight: 1.5, fillOpacity: 0.08, opacity: 1};
   }
 }
 
-load();
+function createAirspaceLayer(item) {
+  const layer = L.geoJSON(item.feature, {
+    style: () => styleFor(item, 'base'),
+    interactive: true,
+    bubblingMouseEvents: false
+  });
+  layer.on('mouseover', () => {
+    if (state.selected === item) return;
+    layer.eachLayer(l => l.setStyle && l.setStyle(styleFor(item, 'hover')));
+  });
+  layer.on('mouseout', () => {
+    if (state.selected === item) return;
+    layer.eachLayer(l => l.setStyle && l.setStyle(styleFor(item, 'base')));
+  });
+  layer.on('click', e => {
+    L.DomEvent.stopPropagation(e);
+    selectAirspace(item, {fly: false, openPopup: true});
+  });
+  layer.bindPopup(popupHtml(item), {maxWidth: 380, minWidth: 280, maxHeight: 500, autoPanPadding: [20, 20]});
+  return layer;
+}
 
-// Legend
-document.getElementById('legend').innerHTML = `
-  <div class="title">AIRSPACE</div>
-  <div><b style="background:#64748b"></b>FIR (click-through)</div>
-  <div><b style="background:#6366f1"></b>CTA / ACC</div>
-  <div><b style="background:#8b5cf6"></b>TMA</div>
-  <div><b style="background:#3b82f6"></b>CTR</div>
-  <div><b style="background:#06b6d4"></b>ATZ</div>
-  <div><b style="background:#a855f7"></b>SRA</div>
-  <div><b style="background:#dc2626"></b>Restricted</div>
-  <div><b style="background:#d97706"></b>Danger</div>
-  <div><b style="background:#b91c1c"></b>Prohibited</div>
-  <div style="margin-top:7px"><b style="background:#0ea5e9;border-radius:50%"></b>Airport</div>
-`;
+function updateLayerStyle(item, mode) {
+  const layer = airspaceLayers.get(item);
+  if (layer) layer.eachLayer(l => l.setStyle && l.setStyle(styleFor(item, mode)));
+}
+
+/* ============ SELECTION ============ */
+function selectAirspace(item, opts = {}) {
+  if (state.selected && state.selected !== item) updateLayerStyle(state.selected, 'base');
+  state.selected = item;
+  updateLayerStyle(item, 'selected');
+  const layer = airspaceLayers.get(item);
+
+  if (layer && opts.fly) {
+    const bounds = layer.getBounds();
+    const target = bounds.getCenter();
+    let done = false;
+    const openIt = () => { if (done) return; done = true; if (opts.openPopup) layer.openPopup(target); };
+    map.once('moveend', openIt);
+    setTimeout(openIt, 500);
+    map.fitBounds(bounds, {padding: [60, 60], maxZoom: 11});
+  } else if (layer && opts.openPopup) {
+    layer.openPopup(layer.getBounds().getCenter());
+  }
+
+  document.querySelectorAll('#results .result-item').forEach(el => el.classList.remove('selected'));
+  const idx = state.items.indexOf(item);
+  const selEl = document.querySelector(`#results .result-item[data-idx="${idx}"]`);
+  if (selEl) { selEl.classList.add('selected'); selEl.scrollIntoView({behavior:'smooth', block:'nearest'}); }
+}
+
+function clearSelection() {
+  if (state.selected) updateLayerStyle(state.selected, 'base');
+  state.selected = null;
+  document.querySelectorAll('#results .result-item').forEach(el => el.classList.remove('selected'));
+  map.closePopup();
+}
+
+/* ============ SIDEBAR ============ */
+function renderFilters() {
+  const counts = {};
+  state.items.forEach(it => { counts[it.type] = (counts[it.type] || 0) + 1; });
+  document.getElementById('filter-chips').innerHTML = Object.keys(TYPE_INFO)
+    .filter(k => counts[k] > 0)
+    .map(k => {
+      const t = TYPE_INFO[k], on = state.activeTypes.has(k);
+      return `<span class="chip ${on ? 'on' : ''}" data-type="${k}" style="${on ? `background:${t.colour};border-color:${t.colour}` : ''}">${t.label}<span class="chip-count">${counts[k]}</span></span>`;
+    }).join('');
+  document.querySelectorAll('#filter-chips .chip').forEach(el => {
+    el.addEventListener('click', () => {
+      const t = el.dataset.type;
+      if (state.activeTypes.has(t)) state.activeTypes.delete(t);
+      else state.activeTypes.add(t);
+      renderFilters(); applyFilters(); renderResults();
+    });
+  });
+}
+
+function renderResults() {
+  const q = state.searchQuery.toLowerCase().trim();
+  const visible = state.items.filter(it => {
+    if (!state.activeTypes.has(it.type)) return false;
+    if (q && !`${it.name} ${it.type} ${it.vertical} ${it.freqs.join(' ')}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  visible.sort((a, b) => a.type !== b.type ? a.type.localeCompare(b.type) : a.name.localeCompare(b.name));
+  document.getElementById('results-info').textContent = `${visible.length} of ${state.items.length} airspaces`;
+
+  document.getElementById('results').innerHTML = visible.length
+    ? visible.map(it => {
+        const t = TYPE_INFO[it.type] || TYPE_INFO.OTHER;
+        const sel = state.selected === it ? ' selected' : '';
+        const meta = it.vertical ? `<div class="result-meta">${escapeHtml(it.vertical)}</div>` : '';
+        const freq = it.freqs.length ? `<div class="result-freq">${escapeHtml(it.freqs.join(' · '))} MHz</div>` : '';
+        return `<div class="result-item${sel}" data-idx="${state.items.indexOf(it)}">
+          <div class="result-dot" style="background:${t.colour}"></div>
+          <div class="result-body">
+            <div class="result-name">${escapeHtml(it.name)}</div>${meta}${freq}
+          </div></div>`;
+      }).join('')
+    : '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:12px">No airspaces match your filters</div>';
+
+  document.querySelectorAll('#results .result-item').forEach(el => {
+    const idx = parseInt(el.dataset.idx);
+    el.addEventListener('click', () => selectAirspace(state.items[idx], {fly: true, openPopup: true}));
+  });
+}
+
+/* ============ FILTERS ============ */
+function applyFilters() {
+  state.items.forEach(it => {
+    const layer = airspaceLayers.get(it);
+    if (!layer) return;
+    if (state.selected === it) return;
+    if (!state.activeTypes.has(it.type)) {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+    } else {
+      if (!map.hasLayer(layer)) layer.addTo(map);
+      layer.eachLayer(l => l.setStyle && l.setStyle(styleFor(it, 'base')));
+    }
+  });
+  applySearch();
+}
+
+function applySearch() {
+  const q = state.searchQuery.toLowerCase().trim();
+  state.items.forEach(it => {
+    const layer = airspaceLayers.get(it);
+    if (!layer || !map.hasLayer(layer) || state.selected === it) return;
+    if (!q) { layer.eachLayer(l => l.setStyle && l.setStyle(styleFor(it, 'base'))); return; }
+    const match = `${it.name} ${it.type} ${it.vertical} ${it.freqs.join(' ')}`.toLowerCase().includes(q);
+    layer.eachLayer(l => l.setStyle && l.setStyle(styleFor(it, match ? 'base' : 'dimmed')));
+  });
+}
+
+/* ============ KMZ LOADING ============ */
+async function loadKMZ() {
+  const loading = document.getElementById('loading');
+  const txt = document.getElementById('loading-text');
+  const set = t => txt.textContent = t;
+
+  try {
+    set('Fetching KMZ…');
+    const res = await fetch(KMZ_FILENAME);
+    if (!res.ok) throw new Error(`HTTP ${res.status} — is "${KMZ_FILENAME}" in the same folder?`);
+    const blob = await res.blob();
+
+    set('Unzipping…');
+    const zip = await JSZip.loadAsync(blob);
+    const kmlFiles = Object.keys(zip.files).filter(f => f.toLowerCase().endsWith('.kml'));
+    if (!kmlFiles.length) throw new Error('No .kml file found inside the KMZ.');
+
+    set(`Parsing ${kmlFiles.length} KML file${kmlFiles.length > 1 ? 's' : ''}…`);
+    const all = [];
+    for (const f of kmlFiles) {
+      const text = await zip.files[f].async('text');
+      const kml = new DOMParser().parseFromString(text, 'text/xml');
+      if (kml.querySelector('parsererror')) { console.warn(`Parse error in ${f}`); continue; }
+      const gj = toGeoJSON.kml(kml);
+      if (gj.features) all.push(...gj.features);
+    }
+
+    const polys = all.filter(f => f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon'));
+    if (!polys.length) throw new Error(`Parsed ${all.length} features, but no polygons found.`);
+
+    set(`Building ${polys.length} airspaces…`);
+    state.items = polys.map(parseAirspace).sort((a, b) => b.area - a.area);
+
+    for (const item of state.items) {
+      const layer = createAirspaceLayer(item);
+      airspaceLayers.set(item, layer);
+      if (state.activeTypes.has(item.type)) layer.addTo(map);
+    }
+
+    renderFilters();
+    renderResults();
+    loading.classList.add('hidden');
+    console.log(`Loaded ${state.items.length} airspaces.`);
+
+  } catch (err) {
+    console.error(err);
+    loading.innerHTML = `<div id="loading-error"><b>Could not load the airspace file</b><br><br>${escapeHtml(err.message)}\n\nChecklist:\n1. "${KMZ_FILENAME}" must be in the same folder as index.html\n2. Page must be served over HTTP (not file://)\n3. Check browser console (F12) for details</div>`;
+  }
+}
+
+/* ============ INTERACTIONS ============ */
+let searchDebounce;
+document.getElementById('search-input').addEventListener('input', e => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => {
+    state.searchQuery = e.target.value;
+    applySearch();
+    renderResults();
+  }, 150);
+});
+
+document.getElementById('btn-fit').addEventListener('click', () => {
+  map.fitBounds([[-35, 16], [-22, 33]]);
+  clearSelection();
+});
+
+document.getElementById('btn-basemap').addEventListener('click', e => {
+  const names = Object.keys(basemaps);
+  const next = names[(names.indexOf(currentBasemap) + 1) % names.length];
+  map.removeLayer(basemaps[currentBasemap]);
+  map.addLayer(basemaps[next]);
+  currentBasemap = next;
+  e.target.textContent = '🗺️ ' + next;
+});
+
+map.on('click', clearSelection);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') clearSelection(); });
+
+/* ============ START ============ */
+loadKMZ();
 </script>
 </body>
 </html>
