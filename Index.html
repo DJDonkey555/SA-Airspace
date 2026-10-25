@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FAWB Airspace</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>html,body,#map{height:100%;margin:0}</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+// DMS -> [lat, lon] (southern latitude, eastern longitude)
+const p = (a,b,c, d,e,f) => [-(a+b/60+c/3600), d+e/60+f/3600];
+
+const A  = p(25,32,14.37, 28,12,45.45);
+const B  = p(25,32,49.53, 28,21,53.35);
+const C  = p(25,42,50.06, 28,21,20.24);
+const D  = p(25,42,15.42, 28,12,25.64);
+const c1 = p(25,37,50.00, 28,21,42.00);  // arc centre B -> C
+const c2 = p(25,37,15.00, 28,12,38.00);  // arc centre D -> A
+
+// clockwise arc, 5 NM radius, from point "from" to point "to"
+function arc(c, from, to) {
+  const k = Math.cos(c[0] * Math.PI / 180);
+  const brg = q => Math.atan2((q[1]-c[1]) * k, q[0]-c[0]);
+  let a = brg(from), z = brg(to);
+  while (z < a) z += 2 * Math.PI;
+  const pts = [];
+  for (let i = 0; i <= 40; i++) {
+    const t = a + (z - a) * i / 40;
+    pts.push([c[0] + 5/60 * Math.cos(t), c[1] + 5/60 * Math.sin(t) / k]);
+  }
+  return pts;
+}
+
+const shape = [A, B, ...arc(c1, B, C), D, ...arc(c2, D, A)];
+
+const map = L.map('map');
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '© OpenStreetMap'}).addTo(map);
+
+const ctr = L.polygon(shape, {color: '#c0392b', weight: 2}).addTo(map);
+map.fitBounds(ctr.getBounds());
+
+ctr.bindPopup(`
+  <b>CTR FAWB (Wonderboom)</b><br>
+  Class C<br>
+  Vertical: GND to 7600 ft ALT<br>
+  Lateral: A 25°32'14.37"S 028°12'45.45"E<br>
+  to B 25°32'49.53"S 028°21'53.35"E,<br>
+  arc 5 NM (cw) to C 25°42'50.06"S 028°21'20.24"E,<br>
+  line to D 25°42'15.42"S 028°12'25.64"E,<br>
+  arc 5 NM (cw) back to A<br><br>
+  <b>Tower:</b> 118.35<br>
+  <b>Ground:</b> 120.60<br><br>
+  <b>Nearby navaids</b><br>
+  WKV Waterkloof VORTAC: 116.90<br>
+  HGV Heidelberg VOR: 116.70<br>
+  JSV Johannesburg DVOR/DME: 115.20
+`);
+</script>
+</body>
+</html>
