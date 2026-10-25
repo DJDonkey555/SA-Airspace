@@ -3,33 +3,98 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>South Africa Airspace (ATNS)</title>
+<title>South Africa Airspace</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.2/togeojson.js"></script>
 <style>
-  html, body, #map { height: 100%; margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+  :root {
+    --bg: #0b1120;
+    --panel: rgba(15, 23, 42, 0.94);
+    --border: rgba(148, 163, 184, 0.18);
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #4ade80;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #map { height: 100%; background: var(--bg); font-family: 'Segoe UI', system-ui, sans-serif; }
+
+  /* Status pill */
   #status {
-    position: absolute; top: 10px; right: 10px; z-index: 1000;
-    background: rgba(255,255,255,0.95); padding: 8px 14px; border-radius: 6px;
-    font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,.18); max-width: 320px;
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 1100; background: var(--panel); color: var(--text);
+    padding: 7px 18px; border-radius: 999px; font-size: 13px; font-weight: 500;
+    border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,.45);
+    backdrop-filter: blur(12px); transition: opacity .4s;
   }
-  #legend {
-    position: absolute; bottom: 24px; left: 10px; z-index: 1000;
-    background: rgba(255,255,255,0.94); padding: 10px 14px; border-radius: 6px;
-    font-size: 12px; line-height: 1.55; box-shadow: 0 2px 8px rgba(0,0,0,.18);
+
+  /* Custom layer control */
+  .leaflet-control-layers {
+    background: var(--panel) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 12px 32px rgba(0,0,0,.5) !important;
+    backdrop-filter: blur(12px);
+    color: var(--text) !important;
+    min-width: 210px;
   }
-  #legend b { display: inline-block; width: 12px; height: 12px; margin-right: 6px;
-              vertical-align: middle; border-radius: 2px; }
-  .leaflet-popup-content { font-size: 13px; line-height: 1.45; margin: 12px 14px; max-height: 380px; overflow: auto; }
-  .popup-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
-  .popup-meta { color: #555; font-size: 12px; margin-bottom: 8px; }
-  .popup-freq { background: #f0f9ff; border-left: 3px solid #0284c7; padding: 4px 8px; margin: 6px 0; }
-  .ap-label { background: none !important; border: none !important; box-shadow: none !important;
-              font: bold 11px/1 system-ui, sans-serif; color: #111;
-              text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; }
+  .leaflet-control-layers-expanded { padding: 12px 14px 10px !important; }
+  .leaflet-control-layers-base label,
+  .leaflet-control-layers-overlays label {
+    color: var(--text) !important; font-size: 13px; margin: 3px 0;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .leaflet-control-layers-separator { border-top: 1px solid var(--border) !important; margin: 8px 0 !important; }
+  .leaflet-control-layers-toggle { background-color: var(--panel) !important; border-radius: 10px !important; }
+
+  /* Zoom buttons */
+  .leaflet-bar {
+    border: 1px solid var(--border) !important;
+    border-radius: 10px !important;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4) !important;
+  }
+  .leaflet-bar a {
+    background: var(--panel) !important; color: var(--text) !important;
+    border-bottom: 1px solid var(--border) !important;
+    width: 34px !important; height: 34px !important; line-height: 34px !important;
+    font-size: 16px !important;
+  }
+  .leaflet-bar a:hover { background: #1e293b !important; color: #fff !important; }
+
+  /* Popups */
+  .leaflet-popup-content-wrapper {
+    background: #1e293b; color: var(--text);
+    border-radius: 12px; border: 1px solid var(--border);
+    box-shadow: 0 16px 40px rgba(0,0,0,.55);
+  }
+  .leaflet-popup-tip { background: #1e293b; }
+  .leaflet-popup-content { margin: 14px 16px; min-width: 180px; }
+  .p-name { font-size: 16px; font-weight: 700; color: #f8fafc; margin-bottom: 6px; }
+  .p-limits { font-size: 13px; color: var(--accent); margin-bottom: 8px; font-weight: 500; }
+  .p-freq { font-size: 13px; line-height: 1.55; color: #e2e8f0; }
+  .p-freq span { color: var(--muted); display: inline-block; min-width: 72px; }
+
+  /* Airport labels */
+  .ap-label {
+    background: none !important; border: none !important; box-shadow: none !important;
+    font: 700 11px/1 'Segoe UI', system-ui, sans-serif; color: #f8fafc;
+    text-shadow: 0 0 5px #000, 0 0 5px #000, 0 1px 3px #000;
+  }
   .ap-label::before { display: none; }
+
+  /* Legend */
+  #legend {
+    position: absolute; bottom: 28px; left: 14px; z-index: 1000;
+    background: var(--panel); color: var(--text); padding: 12px 16px;
+    border-radius: 12px; font-size: 12px; line-height: 1.65;
+    border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,.45);
+    backdrop-filter: blur(12px);
+  }
+  #legend .title { font-weight: 600; color: var(--accent); margin-bottom: 6px; letter-spacing: .03em; font-size: 11px; }
+  #legend b { display: inline-block; width: 11px; height: 11px; margin-right: 7px; vertical-align: middle; border-radius: 2px; }
 </style>
 </head>
 <body>
@@ -38,112 +103,129 @@
 <div id="legend"></div>
 
 <script>
-// ============================================================
-// CHANGE THIS if your KMZ has a different name
-const KMZ_FILENAME = 'RSA DATA -01OCT2026.kmz';
-// ============================================================
+const KMZ = 'RSA DATA -01OCT2026.kmz';
 
 const statusEl = document.getElementById('status');
-const setStatus = (txt, colour = '#111') => {
-  statusEl.textContent = txt;
-  statusEl.style.color = colour;
-};
+const setStatus = (t, c = '#f1f5f9') => { statusEl.textContent = t; statusEl.style.color = c; };
 
-// ---------- Map + base layers ----------
-const map = L.map('map', { maxZoom: 16, zoomControl: true });
+// ---------- Map + panes ----------
+const map = L.map('map', {
+  maxZoom: 16,
+  zoomControl: false,
+  preferCanvas: true
+});
+L.control.zoom({ position: 'topright' }).addTo(map);
+
+// Higher pane so airports & waypoints always sit above airspaces
+map.createPane('airports');
+map.getPane('airports').style.zIndex = 650;
+map.createPane('points');
+map.getPane('points').style.zIndex = 640;
+
+// Base layers – Dark is default
 const baseLayers = {
-  'CARTO Light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  'Dark': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '© OpenStreetMap © CARTO', maxZoom: 16
   }),
-  'Esri Light Grey': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-    attribution: 'Esri', maxNativeZoom: 16, maxZoom: 16
+  'Light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap © CARTO', maxZoom: 16
   }),
-  'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap', maxZoom: 16
+  'Esri Grey': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Esri', maxNativeZoom: 16, maxZoom: 16
   })
 };
-baseLayers['CARTO Light'].addTo(map);
-map.fitBounds([[-35.2, 15.8], [-22.0, 33.2]]);
+baseLayers['Dark'].addTo(map);          // ← DEFAULT
+map.fitBounds([[-35.0, 15.5], [-22.0, 33.5]]);
 
-// ---------- Colour & style by airspace type ----------
-function styleFor(feature) {
-  const name = (feature.properties?.name || feature.properties?.Name || '').toUpperCase();
-  let colour = '#2563eb';
-  if (/^FAP\b|PROHIBITED/.test(name))       colour = '#991b1b';
-  else if (/^FAR\b|RESTRICTED/.test(name))  colour = '#dc2626';
-  else if (/^FAD\b|DANGER/.test(name))      colour = '#d97706';
-  else if (/SRA|SPECIAL RULE/.test(name))   colour = '#7c3aed';
-  else if (/CTR|CONTROL ZONE/.test(name))   colour = '#2563eb';
-  else if (/TMA|TERMINAL/.test(name))       colour = '#8b5cf6';
-  else if (/CTA|CONTROL AREA/.test(name))   colour = '#6366f1';
-  else if (/ATZ|TRAFFIC ZONE/.test(name))   colour = '#0891b2';
-  else if (/FIR|UIR|FLIGHT INFO/.test(name)) colour = '#475569';
+// ---------- Classification ----------
+function classify(name = '') {
+  const n = (name || '').toUpperCase();
+  if (/PROHIBITED|^FAP\b/.test(n)) return { type: 'prohibited', prio: 90, color: '#b91c1c', fill: 0.32, interactive: true };
+  if (/RESTRICTED|^FAR\b|HARBOUR/.test(n)) return { type: 'restricted', prio: 80, color: '#dc2626', fill: 0.26, interactive: true };
+  if (/DANGER|^FAD\b/.test(n)) return { type: 'danger', prio: 70, color: '#d97706', fill: 0.24, interactive: true };
+  if (/ATZ/.test(n)) return { type: 'atz', prio: 60, color: '#06b6d4', fill: 0.22, interactive: true };
+  if (/CTR/.test(n)) return { type: 'ctr', prio: 55, color: '#3b82f6', fill: 0.22, interactive: true };
+  if (/SRA|SPECIAL RULE/.test(n)) return { type: 'sra', prio: 50, color: '#a855f7', fill: 0.18, interactive: true };
+  if (/TMA/.test(n)) return { type: 'tma', prio: 40, color: '#8b5cf6', fill: 0.16, interactive: true };
+  if (/CTA|ACC |FIS /.test(n)) return { type: 'cta', prio: 25, color: '#6366f1', fill: 0.10, interactive: false }; // non-interactive
+  if (/FIR|UIR/.test(n)) return { type: 'fir', prio: 5, color: '#64748b', fill: 0.04, interactive: false };  // non-interactive
+  return { type: 'other', prio: 15, color: '#64748b', fill: 0.08, interactive: false };
+}
 
+function styleFor(f) {
+  const c = classify(f.properties?.name || f.properties?.Name || '');
   return {
-    color: colour,
-    weight: 1.8,
+    color: c.color,
+    weight: c.interactive ? 2.0 : 1.2,
     opacity: 0.9,
-    fillColor: colour,
-    fillOpacity: 0.18
+    fillColor: c.color,
+    fillOpacity: c.fill,
+    interactive: c.interactive
   };
 }
 
-// ---------- Extract frequencies from description / properties ----------
-function extractFrequencies(props) {
-  const text = [
-    props.description || props.Description || '',
-    props.frequency || props.Frequency || props.FREQ || '',
-    Object.values(props).filter(v => typeof v === 'string').join(' ')
-  ].join(' ');
-
-  // Common patterns: 118.1, 124.65, 121.5 MHz, etc.
-  const matches = text.match(/\b(1[1-3]\d\.\d{1,3}|1[1-3]\d)\s*(?:MHz|MHZ)?\b/gi) || [];
-  const unique = [...new Set(matches.map(m => m.replace(/\s*(MHz|MHZ)/i, '').trim()))];
-  return unique.slice(0, 8); // keep it reasonable
+// ---------- Parse limits + frequencies ----------
+function parseDesc(text = '') {
+  const limits = (text.match(/(?:GND|SFC|FL\d+|\d+\s*FT(?:\s*(?:AGL|ALT|AMSL))?)\s*[-–to]+\s*(?:FL\d+|\d+\s*FT(?:\s*(?:AGL|ALT|AMSL))?|UNL)/i) || [])[0] || '';
+  const freqLines = [];
+  const re = /(?:Freq[:\s]*)?(\d{3}\.\d{1,3}|\d{3})\s*(?:MHz)?(?:\s*\(([^)]+)\))?/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const freq = m[1];
+    const label = (m[2] || '').trim();
+    freqLines.push({ freq, label });
+  }
+  // de-dupe
+  const seen = new Set();
+  const unique = freqLines.filter(f => {
+    const k = f.freq + f.label;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return { limits: limits.replace(/\s+/g, ' '), freqs: unique.slice(0, 6) };
 }
 
-// ---------- Clean popup ----------
-function popupFor(feature) {
-  const p = feature.properties || {};
-  const name = p.name || p.Name || p.NAME || 'Unnamed airspace';
-  const freqs = extractFrequencies(p);
+function airspacePopup(f) {
+  const name = f.properties?.name || f.properties?.Name || 'Airspace';
+  const desc = f.properties?.description || f.properties?.Description || '';
+  const { limits, freqs } = parseDesc(desc);
 
-  let html = `<div class="popup-title">${name}</div>`;
-
-  // Useful metadata first
-  const priority = ['lower', 'upper', 'floor', 'ceiling', 'from', 'to', 'class', 'type', 'designator'];
-  const shown = new Set(['name', 'Name', 'NAME', 'description', 'Description']);
-
-  for (const key of Object.keys(p)) {
-    if (shown.has(key) || p[key] == null || p[key] === '') continue;
-    const low = key.toLowerCase();
-    if (priority.some(pr => low.includes(pr))) {
-      html += `<div class="popup-meta"><b>${key}:</b> ${p[key]}</div>`;
-      shown.add(key);
-    }
-  }
-
+  let html = `<div class="p-name">${name}</div>`;
+  if (limits) html += `<div class="p-limits">${limits}</div>`;
   if (freqs.length) {
-    html += `<div class="popup-freq"><b>Frequencies:</b> ${freqs.join(' · ')}</div>`;
-  }
-
-  // Remaining properties
-  for (const [k, v] of Object.entries(p)) {
-    if (shown.has(k) || v == null || v === '') continue;
-    if (/description|name/i.test(k)) continue;
-    html += `<div style="color:#666;font-size:12px"><span style="color:#888">${k}:</span> ${v}</div>`;
-  }
-
-  // Full description at the bottom if present
-  if (p.description || p.Description) {
-    html += `<div style="border-top:1px solid #e5e7eb;margin-top:8px;padding-top:6px;font-size:12px;color:#444">
-               ${p.description || p.Description}
-             </div>`;
+    html += `<div class="p-freq">`;
+    freqs.forEach(fr => {
+      const lbl = fr.label ? fr.label : 'Freq';
+      html += `<div><span>${lbl}</span>${fr.freq} MHz</div>`;
+    });
+    html += `</div>`;
   }
   return html;
 }
 
-// ---------- Hard-coded major airports (cleaner labels) ----------
+function airportPopup(icao, desc = '') {
+  const { freqs } = parseDesc(desc);
+  let html = `<div class="p-name">${icao}</div>`;
+  if (freqs.length) {
+    html += `<div class="p-freq">`;
+    freqs.forEach(fr => {
+      // try to guess role from label
+      let role = fr.label || 'Frequency';
+      if (!fr.label) {
+        // fallback guess
+        role = 'Tower';
+      }
+      html += `<div><span>${role}</span>${fr.freq} MHz</div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += `<div class="p-freq" style="color:var(--muted)">No frequency data in KMZ</div>`;
+  }
+  return html;
+}
+
+// ---------- Hard-coded airports (positions) ----------
 const AIRPORTS = [
   ['FAAB',-28.57331,16.53433],['FABB',-26.24289,28.30078],['FABE',-32.89722,27.27917],
   ['FABL',-29.09673,26.30064],['FABM',-28.24861,28.33611],['FABW',-32.20833,22.93889],
@@ -169,125 +251,166 @@ const AIRPORTS = [
   ['FAYP',-33.90099,18.49749]
 ];
 
+// Will be filled from KMZ
+const aerodromeDesc = {};
+
 const airportLayer = L.layerGroup();
 AIRPORTS.forEach(([id, la, lo]) => {
-  L.circleMarker([la, lo], {
-    radius: 5, color: '#fff', weight: 1.5,
-    fillColor: '#111', fillOpacity: 1
-  })
-  .bindTooltip(id, {
-    permanent: true, direction: 'right', className: 'ap-label',
-    offset: [6, 0], opacity: 0.95
-  })
-  .addTo(airportLayer);
+  const m = L.circleMarker([la, lo], {
+    radius: 5,
+    color: '#f8fafc',
+    weight: 1.5,
+    fillColor: '#0ea5e9',
+    fillOpacity: 1,
+    pane: 'airports'           // ← high z-index pane
+  });
+  m.bindTooltip(id, {
+    permanent: true,
+    direction: 'right',
+    className: 'ap-label',
+    offset: [7, 0]
+  });
+  m.on('click', () => {
+    m.bindPopup(airportPopup(id, aerodromeDesc[id] || ''), { maxWidth: 260 }).openPopup();
+  });
+  airportLayer.addLayer(m);
 });
 airportLayer.addTo(map);
 
 // ---------- Load KMZ ----------
-async function loadKMZ() {
+async function load() {
   try {
-    setStatus('Fetching KMZ…');
-    const response = await fetch(KMZ_FILENAME);
-    if (!response.ok) throw new Error(`HTTP ${response.status} – is "${KMZ_FILENAME}" next to index.html?`);
-    const blob = await response.blob();
+    setStatus('Loading KMZ…');
+    const res = await fetch(KMZ);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const zip = await JSZip.loadAsync(await res.blob());
 
-    setStatus('Unzipping…');
-    const zip = await JSZip.loadAsync(blob);
+    const kmlName = Object.keys(zip.files).find(f => f.toLowerCase().endsWith('.kml'));
+    if (!kmlName) throw new Error('No KML in file');
 
-    const kmlFiles = Object.keys(zip.files).filter(f =>
-      !zip.files[f].dir && f.toLowerCase().endsWith('.kml')
-    );
-    if (!kmlFiles.length) throw new Error('No .kml found inside the KMZ');
+    setStatus('Parsing…');
+    const kml = new DOMParser().parseFromString(await zip.files[kmlName].async('text'), 'text/xml');
+    const gj = toGeoJSON.kml(kml);
+    const features = gj.features || [];
 
-    const allFeatures = [];
-    for (const filename of kmlFiles) {
-      setStatus(`Parsing ${filename}…`);
-      const kmlText = await zip.files[filename].async('text');
-      const kml = new DOMParser().parseFromString(kmlText, 'text/xml');
-      if (kml.querySelector('parsererror')) continue;
-      const gj = toGeoJSON.kml(kml);
-      if (gj.features) allFeatures.push(...gj.features);
-    }
+    // Collect aerodrome descriptions for frequency data
+    features.forEach(f => {
+      if (f.geometry?.type !== 'Point') return;
+      const name = (f.properties?.name || f.properties?.Name || '').toUpperCase().trim();
+      if (/^FA[A-Z]{2}$/.test(name)) {
+        aerodromeDesc[name] = f.properties?.description || f.properties?.Description || '';
+      }
+    });
 
-    // Split into polygons (airspaces) vs points (waypoints / navaids)
-    const airspaces = allFeatures.filter(f =>
-      f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')
-    );
-    const points = allFeatures.filter(f =>
-      f.geometry && f.geometry.type === 'Point'
-    );
+    const polys = features.filter(f => f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon'));
+    const points = features.filter(f => f.geometry?.type === 'Point' && !/^FA[A-Z]{2}$/.test((f.properties?.name || '').toUpperCase()));
 
-    setStatus(`Rendering ${airspaces.length} airspaces + ${points.length} points…`);
+    // Sort so higher priority (interactive) are last → on top
+    polys.sort((a, b) => classify(a.properties?.name || '').prio - classify(b.properties?.name || '').prio);
 
-    // Airspace layer
-    const airspaceLayer = L.geoJSON(
-      { type: 'FeatureCollection', features: airspaces },
-      {
-        style: styleFor,
-        onEachFeature: (f, layer) => {
-          layer.bindPopup(popupFor(f), { maxWidth: 360 });
-          layer.on('mouseover', e => {
-            e.target.setStyle({ weight: 3.5, fillOpacity: 0.32 });
+    // Layer groups
+    const L_fir = L.layerGroup();
+    const L_cta = L.layerGroup();
+    const L_tma = L.layerGroup();
+    const L_ctr = L.layerGroup();
+    const L_sra = L.layerGroup();
+    const L_rest = L.layerGroup();
+    const L_dang = L.layerGroup();
+    const L_proh = L.layerGroup();
+    const L_other = L.layerGroup();
+
+    polys.forEach(f => {
+      const name = f.properties?.name || f.properties?.Name || '';
+      const c = classify(name);
+      const layer = L.geoJSON(f, {
+        style: () => styleFor(f),
+        onEachFeature: (feat, lyr) => {
+          if (!c.interactive) return; // big FIRs/CTAs never get events
+          lyr.bindPopup(airspacePopup(feat), { maxWidth: 280 });
+          lyr.on('mouseover', e => {
+            e.target.setStyle({ weight: 3.2, fillOpacity: Math.min(0.42, c.fill + 0.14) });
             e.target.bringToFront();
           });
-          layer.on('mouseout', e => e.target.setStyle(styleFor(f)));
+          lyr.on('mouseout', e => e.target.setStyle(styleFor(feat)));
         }
-      }
-    );
+      });
 
-    // Point layer (waypoints / navaids) – start OFF so the map isn’t a mess
-    const pointLayer = L.geoJSON(
-      { type: 'FeatureCollection', features: points },
-      {
-        pointToLayer: (f, latlng) => L.circleMarker(latlng, {
-          radius: 3.5, color: '#64748b', weight: 1,
-          fillColor: '#94a3b8', fillOpacity: 0.85
-        }),
-        onEachFeature: (f, layer) => {
-          layer.bindPopup(popupFor(f), { maxWidth: 320 });
-        }
-      }
-    );
+      if (c.type === 'fir') L_fir.addLayer(layer);
+      else if (c.type === 'cta') L_cta.addLayer(layer);
+      else if (c.type === 'tma') L_tma.addLayer(layer);
+      else if (c.type === 'ctr' || c.type === 'atz') L_ctr.addLayer(layer);
+      else if (c.type === 'sra') L_sra.addLayer(layer);
+      else if (c.type === 'restricted') L_rest.addLayer(layer);
+      else if (c.type === 'danger') L_dang.addLayer(layer);
+      else if (c.type === 'prohibited') L_proh.addLayer(layer);
+      else L_other.addLayer(layer);
+    });
 
-    // Layer control
+    // Waypoints / navaids – high pane, off by default
+    const pointLayer = L.geoJSON({ type: 'FeatureCollection', features: points }, {
+      pointToLayer: (f, ll) => L.circleMarker(ll, {
+        radius: 3.2, color: '#475569', weight: 1,
+        fillColor: '#64748b', fillOpacity: 0.85,
+        pane: 'points'
+      }),
+      onEachFeature: (f, lyr) => {
+        const name = f.properties?.name || f.properties?.Name || 'Point';
+        lyr.bindPopup(`<div class="p-name">${name}</div>`);
+      }
+    });
+
+    // Default on
+    L_fir.addTo(map);
+    L_cta.addTo(map);
+    L_tma.addTo(map);
+    L_ctr.addTo(map);
+    L_sra.addTo(map);
+    L_rest.addTo(map);
+    L_dang.addTo(map);
+    L_proh.addTo(map);
+
     const overlays = {
-      'Airspaces': airspaceLayer,
+      'FIRs (pass-through)': L_fir,
+      'CTAs / ACC / FIS': L_cta,
+      'TMAs': L_tma,
+      'CTRs & ATZs': L_ctr,
+      'Special Rules': L_sra,
+      'Restricted': L_rest,
+      'Danger': L_dang,
+      'Prohibited': L_proh,
+      'Other': L_other,
       'Airports': airportLayer,
       'Waypoints / Navaids': pointLayer
     };
-    L.control.layers(baseLayers, overlays, { collapsed: false }).addTo(map);
 
-    airspaceLayer.addTo(map); // airspaces on by default
+    L.control.layers(baseLayers, overlays, {
+      collapsed: false,
+      position: 'topright'
+    }).addTo(map);
 
-    setStatus(`✓ ${airspaces.length} airspaces loaded`, '#059669');
+    setStatus('Ready', var(--green));
+    setTimeout(() => statusEl.style.opacity = '0', 2800);
   } catch (err) {
     console.error(err);
-    setStatus('✗ ' + err.message, '#dc2626');
-    alert(
-      'Could not load the KMZ.\n\n' + err.message +
-      '\n\nMake sure:\n' +
-      `1. File is named exactly "${KMZ_FILENAME}"\n` +
-      '2. You are serving via a local server (python -m http.server or Live Server)\n' +
-      '3. Check the browser console (F12)'
-    );
+    setStatus('Error: ' + err.message, '#f87171');
   }
 }
 
-loadKMZ();
+load();
 
-// ---------- Legend ----------
+// Legend
 document.getElementById('legend').innerHTML = `
-  <div style="font-weight:600;margin-bottom:4px">Airspace types</div>
-  <div><b style="background:#475569"></b>FIR / UIR</div>
-  <div><b style="background:#6366f1"></b>CTA</div>
+  <div class="title">AIRSPACE</div>
+  <div><b style="background:#64748b"></b>FIR (click-through)</div>
+  <div><b style="background:#6366f1"></b>CTA / ACC</div>
   <div><b style="background:#8b5cf6"></b>TMA</div>
-  <div><b style="background:#2563eb"></b>CTR</div>
-  <div><b style="background:#0891b2"></b>ATZ</div>
-  <div><b style="background:#7c3aed"></b>SRA</div>
-  <div><b style="background:#dc2626"></b>FAR Restricted</div>
-  <div><b style="background:#d97706"></b>FAD Danger</div>
-  <div><b style="background:#991b1b"></b>FAP Prohibited</div>
-  <div style="margin-top:6px"><b style="background:#111;border-radius:50%"></b>Airport</div>
+  <div><b style="background:#3b82f6"></b>CTR</div>
+  <div><b style="background:#06b6d4"></b>ATZ</div>
+  <div><b style="background:#a855f7"></b>SRA</div>
+  <div><b style="background:#dc2626"></b>Restricted</div>
+  <div><b style="background:#d97706"></b>Danger</div>
+  <div><b style="background:#b91c1c"></b>Prohibited</div>
+  <div style="margin-top:7px"><b style="background:#0ea5e9;border-radius:50%"></b>Airport</div>
 `;
 </script>
 </body>
