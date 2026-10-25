@@ -2,62 +2,107 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>FAWB Airspace</title>
+<title>Airspace</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>html,body,#map{height:100%;margin:0}</style>
+<style>
+  html,body,#map{height:100%;margin:0}
+  .ap{background:none;border:none;box-shadow:none;font:bold 12px sans-serif;color:#000;padding:0 0 0 2px}
+  .ap:before{display:none}
+  .leaflet-popup-content{font:13px/1.4 sans-serif;margin:10px 12px}
+</style>
 </head>
 <body>
 <div id="map"></div>
 <script>
-// DMS -> [lat, lon] (southern latitude, eastern longitude)
-const p = (a,b,c, d,e,f) => [-(a+b/60+c/3600), d+e/60+f/3600];
+// AIP style "DDMMSS" / "DDDMMSS" (seconds optional) -> [lat, lon] (S / E)
+const pt = (la, lo) => [
+  -(+la.slice(0,2) + la.slice(2,4)/60 + la.slice(4)/3600),
+  +lo.slice(0,3) + lo.slice(3,5)/60 + lo.slice(5)/3600
+];
 
-const A  = p(25,32,14.37, 28,12,45.45);
-const B  = p(25,32,49.53, 28,21,53.35);
-const C  = p(25,42,50.06, 28,21,20.24);
-const D  = p(25,42,15.42, 28,12,25.64);
-const c1 = p(25,37,50.00, 28,21,42.00);  // arc centre B -> C
-const c2 = p(25,37,15.00, 28,12,38.00);  // arc centre D -> A
-
-// clockwise arc, 5 NM radius, from point "from" to point "to"
-function arc(c, from, to) {
+// arc around centre c, radius r (NM). Clockwise by default; ccw=true goes anticlockwise.
+function arc(c, r, from, to, ccw) {
+  if (ccw) return arc(c, r, to, from).reverse();
   const k = Math.cos(c[0] * Math.PI / 180);
   const brg = q => Math.atan2((q[1]-c[1]) * k, q[0]-c[0]);
   let a = brg(from), z = brg(to);
   while (z < a) z += 2 * Math.PI;
-  const pts = [];
+  const out = [];
   for (let i = 0; i <= 40; i++) {
     const t = a + (z - a) * i / 40;
-    pts.push([c[0] + 5/60 * Math.cos(t), c[1] + 5/60 * Math.sin(t) / k]);
+    out.push([c[0] + r/60 * Math.cos(t), c[1] + r/60 * Math.sin(t) / k]);
   }
-  return pts;
+  return out;
 }
 
-const shape = [A, B, ...arc(c1, B, C), D, ...arc(c2, D, A)];
+// ---- reference points ----
+const A  = pt('253214.37','0281245.45'), B = pt('253249.53','0282153.35');
+const C  = pt('254250.06','0282120.24'), D = pt('254215.42','0281225.64');
+const c1 = pt('253750','0282142'), c2 = pt('253715','0281238');   // CTR arc centres
+const c35 = pt('260831','0281415');                               // 35 NM arc centre
 
+// ---- airspaces ----
+const spaces = [
+  { type:'ctr', name:'CTR FAWB Wonderboom (Class C)', vert:'GND – 7600 ft ALT',
+    lat:'25°32′14″S 028°12′45″E → 25°32′50″S 028°21′53″E; 5 NM arc (cw, centre 25°37′50″S 028°21′42″E) → 25°42′50″S 028°21′20″E; line → 25°42′15″S 028°12′26″E; 5 NM arc (cw, centre 25°37′15″S 028°12′38″E) → start.',
+    freq:['Tower 118.35','Ground 120.60'],
+    shape:[A, B, ...arc(c1,5,B,C), D, ...arc(c2,5,D,A)] },
+
+  { type:'far', name:'FAR 171 Wallmansthal Weapons Range', vert:'GND – FL140',
+    lat:'25°22′S 028°18′E; 25°31′S 028°17′40″E; 25°31′S 028°25′E; 25°21′S 028°22′E.',
+    freq:[],
+    shape:[pt('252200','0281800'), pt('253100','0281740'), pt('253100','0282500'), pt('252100','0282200')] },
+
+  { type:'fad', name:'FAD 127 Pretoria Flying Training Area I', vert:'GND – FL100',
+    lat:'25°32′30″S 028°16′30″E (on CTR) → along CTR to 25°34′S 028°09′E; 35 NM arc (anticlockwise, centre 26°08′31″S 028°14′15″E) → 25°34′30″S 028°05′30″E; 25°24′S 028°03′E; 25°22′S 028°09′E; 25°26′S 028°07′E; 25°23′30″S 028°18′E; back to start.',
+    freq:['124.40'],
+    shape:[pt('253230','0281630'), A,
+           ...arc(c2,5,A,pt('2534','02809'),true),
+           ...arc(c35,35,pt('2534','02809'),pt('253430','0280530'),true),
+           pt('252400','0280300'), pt('252200','0280900'), pt('252600','0280700'), pt('252330','0281800')] },
+
+  { type:'fad', name:'FAD 128 Pretoria Flying Training Area II', vert:'GND – FL100',
+    lat:'25°35′20″S 028°26′30″E (on CTR); 35 NM arc (clockwise, centre 26°08′31″S 028°14′15″E) → 25°48′20″S 028°45′45″E; 25°29′20″S 029°01′45″E; 25°20′45″S 028°35′45″E; 25°21′S 028°25′E; 25°31′S 028°25′E; 25°32′30″S 028°22′E (on CTR); clockwise along CTR to start.',
+    freq:['124.40'],
+    shape:[pt('253520','0282630'),
+           ...arc(c35,35,pt('253520','0282630'),pt('254820','0284545')),
+           pt('252920','0290145'), pt('252045','0283545'), pt('252100','0282500'), pt('253100','0282500'), pt('253230','0282200'),
+           ...arc(c1,5,pt('253230','0282200'),pt('253520','0282630'))] },
+
+  { type:'fad', name:'FAD 129 Brits / Grand Central Flying Training Area', vert:'GND – 7500 ft ALT',
+    lat:'25°39′20″S 028°02′50″E; 25°27′45″S 028°00′E; 25°29′S 027°49′20″E; 25°39′30″S 027°56′30″E.',
+    freq:['124.80 (call sign "Brits/Grand Central Flying Training Area")'],
+    shape:[pt('253920','0280250'), pt('252745','0280000'), pt('252900','0274920'), pt('253930','0275630')] }
+];
+
+const colour = { ctr:'#2563eb', far:'#dc2626', fad:'#d97706' };
+
+// ---- map ----
 const map = L.map('map');
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '© OpenStreetMap'}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
+  {attribution:'© OpenStreetMap © CARTO', maxZoom:18}).addTo(map);
 
-const ctr = L.polygon(shape, {color: '#c0392b', weight: 2}).addTo(map);
-map.fitBounds(ctr.getBounds());
+const all = L.featureGroup();
+spaces.forEach(s => {
+  L.polygon(s.shape, {color:colour[s.type], weight:2, fillOpacity:0.06})
+   .bindPopup(`<b>${s.name}</b><br><span style="color:#666">${s.vert}</span><br><br>
+     <b>Lateral:</b> ${s.lat}` +
+     (s.freq.length ? `<br><br><b>Freq:</b> ${s.freq.join('<br>')}` : ''), {maxWidth:320})
+   .addTo(all);
+});
+all.addTo(map);
+map.fitBounds(all.getBounds());
 
-ctr.bindPopup(`
-  <b>CTR FAWB (Wonderboom)</b><br>
-  Class C<br>
-  Vertical: GND to 7600 ft ALT<br>
-  Lateral: A 25°32'14.37"S 028°12'45.45"E<br>
-  to B 25°32'49.53"S 028°21'53.35"E,<br>
-  arc 5 NM (cw) to C 25°42'50.06"S 028°21'20.24"E,<br>
-  line to D 25°42'15.42"S 028°12'25.64"E,<br>
-  arc 5 NM (cw) back to A<br><br>
-  <b>Tower:</b> 118.35<br>
-  <b>Ground:</b> 120.60<br><br>
-  <b>Nearby navaids</b><br>
-  WKV Waterkloof VORTAC: 116.90<br>
-  HGV Heidelberg VOR: 116.70<br>
-  JSV Johannesburg DVOR/DME: 115.20
-`);
+// ---- airports ----
+const airports = [
+  ['FAWB', ...pt('253919.11','0281316.81')], ['FAOR', -26.1392, 28.2460], ['FAWK', -25.8300, 28.2225],
+  ['FASK', -25.8097, 28.1650], ['FAGC', -25.9867, 28.1400], ['FAGM', -26.2425, 28.1512],
+  ['FALA', -25.9385, 27.9261]
+];
+airports.forEach(([id, la, lo]) =>
+  L.circleMarker([la, lo], {radius:6, color:'#fff', weight:2, fillColor:'#000', fillOpacity:1, interactive:false})
+   .bindTooltip(id, {permanent:true, direction:'right', className:'ap'}).addTo(map));
 </script>
 </body>
 </html>
