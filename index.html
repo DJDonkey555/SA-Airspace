@@ -9,98 +9,225 @@
   html,body,#map{height:100%;margin:0}
   .ap{background:none;border:none;box-shadow:none;font:bold 12px sans-serif;color:#000;padding:0 0 0 2px}
   .ap:before{display:none}
-  .leaflet-popup-content{font:13px/1.4 sans-serif;margin:10px 12px}
+  .leaflet-popup-content{font:13px/1.4 sans-serif;margin:10px 12px;max-height:280px;overflow:auto}
 </style>
 </head>
 <body>
 <div id="map"></div>
 <script>
-// AIP style "DDMMSS" / "DDDMMSS" (seconds optional) -> [lat, lon] (S / E)
-const pt = (la, lo) => [
-  -(+la.slice(0,2) + la.slice(2,4)/60 + la.slice(4)/3600),
-  +lo.slice(0,3) + lo.slice(3,5)/60 + lo.slice(5)/3600
-];
+/* ===================== 1. GEOMETRY ===================== */
+const rad = d => d * Math.PI / 180, TAU = 2 * Math.PI;
+const mod = a => ((a % TAU) + TAU) % TAU;
 
-// arc around centre c, radius r (NM). Clockwise by default; ccw=true goes anticlockwise.
-function arc(c, r, from, to, ccw) {
-  if (ccw) return arc(c, r, to, from).reverse();
-  const k = Math.cos(c[0] * Math.PI / 180);
-  const brg = q => Math.atan2((q[1]-c[1]) * k, q[0]-c[0]);
-  let a = brg(from), z = brg(to);
-  while (z < a) z += 2 * Math.PI;
-  const out = [];
-  for (let i = 0; i <= 40; i++) {
-    const t = a + (z - a) * i / 40;
-    out.push([c[0] + r/60 * Math.cos(t), c[1] + r/60 * Math.sin(t) / k]);
-  }
+// "253405.629 0280819.253" (DDMMSS.s DDDMMSS.s, S / E) -> [lat, lon]
+const P = s => { const [la, lo] = s.trim().split(/[ ,]+/);
+  return [-(+la.slice(0,2) + la.slice(2,4)/60 + la.slice(4)/3600),
+           +lo.slice(0,3) + lo.slice(3,5)/60 + lo.slice(5)/3600]; };
+
+// flat frame around centre c: x = east NM, y = north NM
+const loc   = (c, p) => [(p[1]-c[1]) * 60 * Math.cos(rad(c[0])), (p[0]-c[0]) * 60];
+const unloc = (c, x, y) => [c[0] + y/60, c[1] + x/60/Math.cos(rad(c[0]))];
+
+// points strictly between a and b on a circle round c (radius blends from a's to b's distance)
+function arc(c, a, b, ccw) {
+  const A = loc(c,a), B = loc(c,b), r1 = Math.hypot(...A), r2 = Math.hypot(...B);
+  const t1 = Math.atan2(A[0],A[1]), t2 = Math.atan2(B[0],B[1]);
+  const d = ccw ? -mod(t1 - t2) : mod(t2 - t1);
+  const n = Math.max(2, Math.ceil(Math.abs(d) / rad(2))), out = [];
+  for (let i = 1; i < n; i++) { const t = t1 + d*i/n, r = r1 + (r2-r1)*i/n;
+    out.push(unloc(c, r*Math.sin(t), r*Math.cos(t))); }
   return out;
 }
 
-// ---- reference points ----
-const A  = pt('253214.37','0281245.45'), B = pt('253249.53','0282153.35');
-const C  = pt('254250.06','0282120.24'), D = pt('254215.42','0281225.64');
-const c1 = pt('253750','0282142'), c2 = pt('253715','0281238');   // CTR arc centres
-const c35 = pt('260831','0281415');                               // 35 NM arc centre
+// circle (radius r NM round c) pinched to two apex points by tangent lines
+function kite(c, r, a1, a2) {
+  const tang = (a, s) => { const v = loc(c,a); return Math.atan2(v[0],v[1]) + s*Math.acos(r/Math.hypot(...v)); };
+  const pt = t => unloc(c, r*Math.sin(t), r*Math.cos(t));
+  const sweep = (t1, t2) => { const d = mod(t2 - t1), o = [];
+    for (let i = 1; i < 30; i++) o.push(pt(t1 + d*i/30)); return o; };
+  const [p1, m1, p2, m2] = [tang(a1,1), tang(a1,-1), tang(a2,1), tang(a2,-1)];
+  return [a1, pt(p1), ...sweep(p1, m2), pt(m2), a2, pt(p2), ...sweep(p2, m1), pt(m1)];
+}
 
-// ---- airspaces ----
-const spaces = [
-  { type:'ctr', name:'CTR FAWB Wonderboom (Class C)', vert:'GND – 7600 ft ALT',
-    lat:'25°32′14″S 028°12′45″E → 25°32′50″S 028°21′53″E; 5 NM arc (cw, centre 25°37′50″S 028°21′42″E) → 25°42′50″S 028°21′20″E; line → 25°42′15″S 028°12′26″E; 5 NM arc (cw, centre 25°37′15″S 028°12′38″E) → start.',
+const isCW = ring => ring.reduce((s,a,i) => { const b = ring[(i+1) % ring.length];
+  return s + (b[1]-a[1]) * (b[0]+a[0]); }, 0) > 0;
+
+// nearest point on a ring: segment index i, fraction t
+function project(ring, p) {
+  const k = Math.cos(rad(p[0])); let best = null;
+  ring.forEach((a, i) => {
+    const b = ring[(i+1) % ring.length];
+    const ax = (a[1]-p[1])*k, ay = a[0]-p[0], dx = (b[1]-a[1])*k, dy = b[0]-a[0], L = dx*dx + dy*dy;
+    const t = L ? Math.max(0, Math.min(1, -(ax*dx + ay*dy) / L)) : 0;
+    const d = Math.hypot(ax + t*dx, ay + t*dy);
+    if (!best || d < best.d) best = {i, t, d};
+  });
+  return best;
+}
+
+// vertices met when walking round `ring` from point `from` to point `to` in the given sense
+function slice(ring, from, to, sense) {
+  const n = ring.length, fwd = (sense === 'cw') === isCW(ring);
+  const A = project(ring, from), B = project(ring, to);
+  let pa = A.i + A.t, pb = B.i + B.t; const out = [];
+  if (fwd) { if (pb < pa) pb += n;
+    for (let v = Math.floor(pa)+1; v <= Math.floor(pb); v++) out.push(ring[v % n]); }
+  else { if (pb > pa) pb -= n;
+    for (let v = Math.ceil(pa)-1; v > Math.floor(pb); v--) out.push(ring[((v % n) + n) % n]); }
+  return out;
+}
+
+const dms = (v, w) => { const t = Math.round(Math.abs(v) * 3600);
+  return String(Math.floor(t/3600)).padStart(w,'0') + '°' + String(Math.floor(t%3600/60)).padStart(2,'0') + '′' + String(t%60).padStart(2,'0') + '″'; };
+const fmt = p => dms(p[0],2) + 'S ' + dms(p[1],3) + 'E';
+
+/* ===================== 2. AIRSPACE CLASS ===================== */
+const TYPES = {
+  ctr: {label:'CTR',                         colour:'#2563eb'},
+  far: {label:'Restricted (FAR)',            colour:'#dc2626'},
+  fad: {label:'Danger / training (FAD)',     colour:'#d97706'},
+  sra: {label:'Special Rules Area',          colour:'#7c3aed', fill:0.10},
+  ref: {label:'CTR/TMA outlines (reference)', colour:'#6b7280', dash:'4 4', fill:0}
+};
+
+class Airspace {
+  constructor(o) {
+    Object.assign(this, {freq: [], short: o.id}, o);
+    this.ring = this.build(o.path);
+    Airspace.all[o.id] = this;
+  }
+  // path items:  "pt"  |  {to, arc, ccw}  |  {to, along, sense}  |  {kite:{c,r,a1,a2}}
+  build(path) {
+    const r = [];
+    for (const s of path) {
+      if (typeof s === 'string') { r.push(P(s)); continue; }
+      if (s.kite) { r.push(...kite(P(s.kite.c), s.kite.r, P(s.kite.a1), P(s.kite.a2))); continue; }
+      const from = r[r.length-1], to = P(s.to);
+      if (s.arc)   r.push(...arc(P(s.arc), from, to, s.ccw));
+      if (s.along) r.push(...slice(Airspace.all[s.along].ring, from, to, s.sense));
+      r.push(to);
+    }
+    const a = r[0], z = r[r.length-1];
+    if (a[0] === z[0] && a[1] === z[1]) r.pop();
+    return r;
+  }
+  lateral() {
+    return this.path.map(s =>
+      typeof s === 'string' ? fmt(P(s))
+      : s.kite ? `teardrop, ${s.kite.r} NM round ${fmt(P(s.kite.c))}, apexes ${fmt(P(s.kite.a1))} and ${fmt(P(s.kite.a2))}`
+      : s.arc  ? `${s.ccw ? 'anticlockwise' : 'clockwise'} arc round ${fmt(P(s.arc))} to ${fmt(P(s.to))}`
+      : `along ${Airspace.all[s.along].short} to ${fmt(P(s.to))}`
+    ).join(' → ');
+  }
+  popup() {
+    return `<b>${this.name}</b><br><span style="color:#666">${this.vert}</span><br><br>` +
+           `<b>Lateral:</b> ${this.lateral()}` +
+           (this.freq.length ? `<br><br><b>Freq:</b><br>${this.freq.join('<br>')}` : '');
+  }
+  layer() {
+    const t = TYPES[this.type];
+    return L.polygon(this.ring, {color: t.colour, weight: 2, dashArray: t.dash, fillOpacity: t.fill ?? 0.06})
+            .bindPopup(this.popup(), {maxWidth: 340});
+  }
+}
+Airspace.all = {};
+
+/* ===================== 3. DATA (add new airspaces here) ===================== */
+const C35 = '260831 0281415';                       // 35 / 40 NM arc centre (Johannesburg)
+const WB = ['253214.37 0281245.45', '253249.53 0282153.35', '254250.06 0282120.24', '254215.42 0281225.64'];
+const S0 = '253405.629 0280819.253';                // SRA start, on Wonderboom CTR
+const X1 = '254225.411 0281350.838', APEX = '254259.986 0280600.359', P2 = '255221.904 0280640.317';
+const P3 = '261244.019 0280420.527', V4 = '262332 0281139', V3 = '262226.965 0281433.832';
+const N3 = '264700.833 0282651.034', TMAE = '254820 0284545';
+const WEST = ['261244.803 0280125.648', '261352.240 0275905.430', '261512.110 0275536.110',
+              '261544.878 0275324.306', '261740.034 0275017.927', '262427.143 0273317.290'];
+const SRA_VERT = 'GND – base of TMA (7600 ft)';
+
+// Order matters: an airspace can only "follow" one that is listed above it.
+[
+  { id:'WBCTR', type:'ctr', short:'Wonderboom CTR', name:'CTR FAWB Wonderboom (Class C)', vert:'GND – 7600 ft ALT',
     freq:['Tower 118.35','Ground 120.60'],
-    shape:[A, B, ...arc(c1,5,B,C), D, ...arc(c2,5,D,A)] },
+    path:[WB[0], WB[1], {to:WB[2], arc:'253750 0282142'}, WB[3], {to:WB[0], arc:'253715 0281238'}] },
 
-  { type:'far', name:'FAR 171 Wallmansthal Weapons Range', vert:'GND – FL140',
-    lat:'25°22′S 028°18′E; 25°31′S 028°17′40″E; 25°31′S 028°25′E; 25°21′S 028°22′E.',
-    freq:[],
-    shape:[pt('252200','0281800'), pt('253100','0281740'), pt('253100','0282500'), pt('252100','0282200')] },
+  { id:'WKCTR', type:'ref', short:'Waterkloof CTR', name:'CTR FAWK Waterkloof (Class C)', vert:'GND – 7600 ft ALT',
+    freq:['Tower 124.10','Ground 121.85 (prior arrangement)','ATIS 116.90'],
+    path:[{kite:{c:'254929 0281349', r:7, a1:'254300 0280600', a2:'260000 0282345'}}] },
 
-  { type:'fad', name:'FAD 127 Pretoria Flying Training Area I', vert:'GND – FL100',
-    lat:'25°32′30″S 028°16′30″E (on CTR) → along CTR to 25°34′S 028°09′E; 35 NM arc (anticlockwise, centre 26°08′31″S 028°14′15″E) → 25°34′30″S 028°05′30″E; 25°24′S 028°03′E; 25°22′S 028°09′E; 25°26′S 028°07′E; 25°23′30″S 028°18′E; back to start.',
-    freq:['124.40'],
-    shape:[pt('253230','0281630'), A,
-           ...arc(c2,5,A,pt('2534','02809'),true),
-           ...arc(c35,35,pt('2534','02809'),pt('253430','0280530'),true),
-           pt('252400','0280300'), pt('252200','0280900'), pt('252600','0280700'), pt('252330','0281800')] },
+  { id:'FAORCTR', type:'ref', short:'OR Tambo CTR', name:'CTR FAOR O R Tambo (Class C)', vert:'GND – 7600 ft ALT (6500 ft above Rand ATZ)',
+    freq:['Tower 118.10 (W) / 118.60 (E)','Ground 121.90','ATIS 126.20'],
+    path:['260002 0282344','261632 0282014','262232 0281429', V4,'261602 0280439',
+          P3,'261117 0280559','255902 0280959','255222 0280629',
+          {to:'255632 0281139', arc:'254931 0281347', ccw:true}] },
 
-  { type:'fad', name:'FAD 128 Pretoria Flying Training Area II', vert:'GND – FL100',
-    lat:'25°35′20″S 028°26′30″E (on CTR); 35 NM arc (clockwise, centre 26°08′31″S 028°14′15″E) → 25°48′20″S 028°45′45″E; 25°29′20″S 029°01′45″E; 25°20′45″S 028°35′45″E; 25°21′S 028°25′E; 25°31′S 028°25′E; 25°32′30″S 028°22′E (on CTR); clockwise along CTR to start.',
-    freq:['124.40'],
-    shape:[pt('253520','0282630'),
-           ...arc(c35,35,pt('253520','0282630'),pt('254820','0284545')),
-           pt('252920','0290145'), pt('252045','0283545'), pt('252100','0282500'), pt('253100','0282500'), pt('253230','0282200'),
-           ...arc(c1,5,pt('253230','0282200'),pt('253520','0282630'))] },
+  { id:'WKTMA', type:'ref', short:'Waterkloof TMA', name:'Waterkloof (Military) TMA (Class C)', vert:'7600 ft AMSL – FL195',
+    freq:['Johannesburg Radar 123.70 / 124.50 (outside Waterkloof APP hours)'],
+    path:[TMAE,'260000 0282345','255630 0281140',{to:'255112 0280600', arc:'254929 0281349'},
+          '254930 0280600','253830 0280600','253400 0280900',{to:TMAE, arc:'260925.62 0281351.69'}] },
 
-  { type:'fad', name:'FAD 129 Brits / Grand Central Flying Training Area', vert:'GND – 7500 ft ALT',
-    lat:'25°39′20″S 028°02′50″E; 25°27′45″S 028°00′E; 25°29′S 027°49′20″E; 25°39′30″S 027°56′30″E.',
+  { id:'JHBTMA', type:'ref', short:'Johannesburg TMA', name:'Johannesburg TMA (Class C)', vert:'7600 ft AMSL – FL110',
+    freq:['123.70','124.50'],
+    path:[TMAE,'254500 0291230','255520 0291230','260610 0285833',{to:'260931.15 0272952.63', arc:C35},
+          '260930 0273050','260150 0273620',{to:'253358.20 0280901.16', arc:C35},
+          '253400 0280900',{to:TMAE, along:'WKTMA', sense:'ccw'}] },
+
+  { id:'FAR171', type:'far', name:'FAR 171 Wallmansthal Weapons Range', vert:'GND – FL140',
+    path:['252200 0281800','253100 0281740','253100 0282500','252100 0282200'] },
+
+  { id:'FAD127', type:'fad', name:'FAD 127 Pretoria Flying Training Area I', vert:'GND – FL100', freq:['124.40'],
+    path:['253230 0281630',{to:'2534 02809', along:'WBCTR', sense:'ccw'},{to:'253430 0280530', arc:C35, ccw:true},
+          '252400 0280300','252200 0280900','252600 0280700','252330 0281800'] },
+
+  { id:'FAD128', type:'fad', name:'FAD 128 Pretoria Flying Training Area II', vert:'GND – FL100', freq:['124.40'],
+    path:['253520 0282630',{to:'254820 0284545', arc:C35},'252920 0290145','252045 0283545','252100 0282500',
+          '253100 0282500','253230 0282200',{to:'253520 0282630', along:'WBCTR', sense:'cw'}] },
+
+  { id:'FAD129', type:'fad', name:'FAD 129 Brits / Grand Central Flying Training Area', vert:'GND – 7500 ft ALT',
     freq:['124.80 (call sign "Brits/Grand Central Flying Training Area")'],
-    shape:[pt('253920','0280250'), pt('252745','0280000'), pt('252900','0274920'), pt('253930','0275630')] }
-];
+    path:['253920 0280250','252745 0280000','252900 0274920','253930 0275630'] },
 
-const colour = { ctr:'#2563eb', far:'#dc2626', fad:'#d97706' };
+  { id:'SRAE', type:'sra', name:'Johannesburg Special Rules Area – East', vert:SRA_VERT, freq:['125.40'],
+    path:[S0,
+          {to:X1,   along:'WBCTR',   sense:'ccw'}, {to:APEX, along:'WKCTR',   sense:'ccw'},
+          {to:P2,   along:'WKCTR',   sense:'ccw'}, {to:P3,   along:'FAORCTR', sense:'ccw'},
+          {to:V4,   along:'FAORCTR', sense:'ccw'}, {to:V3,   along:'FAORCTR', sense:'ccw'},
+          N3, {to:TMAE, along:'JHBTMA', sense:'ccw'}, {to:S0, along:'WKTMA', sense:'ccw'}] },
 
-// ---- map ----
-const map = L.map('map');
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
-  {attribution:'© OpenStreetMap © CARTO', maxZoom:18}).addTo(map);
+  { id:'SRAW', type:'sra', name:'Johannesburg Special Rules Area – West', vert:SRA_VERT, freq:['125.80'],
+    path:[S0,
+          {to:X1, along:'WBCTR', sense:'ccw'}, {to:APEX, along:'WKCTR', sense:'ccw'},
+          {to:P2, along:'WKCTR', sense:'ccw'}, {to:P3,   along:'FAORCTR', sense:'ccw'},
+          ...WEST, {to:S0, along:'JHBTMA', sense:'cw'}] },
 
-const all = L.featureGroup();
-spaces.forEach(s => {
-  L.polygon(s.shape, {color:colour[s.type], weight:2, fillOpacity:0.06})
-   .bindPopup(`<b>${s.name}</b><br><span style="color:#666">${s.vert}</span><br><br>
-     <b>Lateral:</b> ${s.lat}` +
-     (s.freq.length ? `<br><br><b>Freq:</b> ${s.freq.join('<br>')}` : ''), {maxWidth:320})
-   .addTo(all);
-});
-all.addTo(map);
-map.fitBounds(all.getBounds());
+  { id:'SRAS', type:'sra', name:'Johannesburg Special Rules Area – South', vert:SRA_VERT, freq:['125.60'],
+    path:[P3, ...WEST, {to:N3, along:'JHBTMA', sense:'ccw'}, V3,
+          {to:V4, along:'FAORCTR', sense:'cw'}, {to:P3, along:'FAORCTR', sense:'cw'}] }
+].forEach(o => new Airspace(o));
 
-// ---- airports ----
-const airports = [
-  ['FAWB', ...pt('253919.11','0281316.81')], ['FAOR', -26.1392, 28.2460], ['FAWK', -25.8300, 28.2225],
-  ['FASK', -25.8097, 28.1650], ['FAGC', -25.9867, 28.1400], ['FAGM', -26.2425, 28.1512],
-  ['FALA', -25.9385, 27.9261]
-];
-airports.forEach(([id, la, lo]) =>
+/* ===================== 4. MAP ===================== */
+const map = L.map('map', {maxZoom: 16});
+const base = {
+  'Light grey (no key)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                          {attribution:'Esri', maxNativeZoom:16, maxZoom:16}),
+  'CARTO light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
+                          {attribution:'© OpenStreetMap © CARTO', maxZoom:16}),
+  'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          {attribution:'© OpenStreetMap', maxZoom:16})
+};
+base['Light grey (no key)'].addTo(map);
+
+const groups = {}, overlays = {};
+for (const [k, t] of Object.entries(TYPES)) overlays[t.label] = groups[k] = L.featureGroup();
+Object.values(Airspace.all).forEach(a => a.layer().addTo(groups[a.type]));
+const shown = ['ctr','far','fad','sra'];
+shown.forEach(k => groups[k].addTo(map));            // 'ref' outlines are off until ticked
+L.control.layers(base, overlays).addTo(map);
+map.fitBounds(L.featureGroup(shown.map(k => groups[k])).getBounds());
+
+// airports (not clickable, so clicks reach the airspace underneath)
+[['FAWB', ...P('253919.11 0281316.81')], ['FAOR', -26.1392, 28.2460], ['FAWK', -25.8300, 28.2225],
+ ['FASK', -25.8097, 28.1650], ['FAGC', -25.9867, 28.1400], ['FAGM', -26.2425, 28.1512],
+ ['FALA', -25.9385, 27.9261]
+].forEach(([id, la, lo]) =>
   L.circleMarker([la, lo], {radius:6, color:'#fff', weight:2, fillColor:'#000', fillOpacity:1, interactive:false})
    .bindTooltip(id, {permanent:true, direction:'right', className:'ap'}).addTo(map));
 </script>
