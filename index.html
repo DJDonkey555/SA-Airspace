@@ -106,22 +106,38 @@ const TYPES = {
 class Airspace {
   constructor(o) {
     Object.assign(this, {freq: [], short: o.id}, o);
-    this.ring = this.build(o.path);
     Airspace.all[o.id] = this;
+  }
+  get ring() {
+    if (!this._built) {
+      try { this._ring = this.build(this.path); }
+      catch (e) { console.error('Build failed:', this.id, e); this._ring = []; }
+      this._built = true;
+    }
+    return this._ring;
   }
   build(path) {
     const r = [];
+    // If the path starts with an arc/along (no preceding point), seed with the eventual closing point.
+    if (path.length && typeof path[0] === 'object' && (path[0].arc || path[0].along)) {
+      for (let i = path.length - 1; i >= 0; i--) {
+        const s = path[i];
+        if (typeof s === 'string') { r.push(P(s)); break; }
+        if (s.to) { r.push(P(s.to)); break; }
+      }
+    }
     for (const s of path) {
       if (typeof s === 'string') { r.push(P(s)); continue; }
       if (s.circle) { r.push(...circle(P(s.circle.c), s.circle.r, s.circle.steps||64)); continue; }
       if (s.kite)   { r.push(...kite(P(s.kite.c), s.kite.r, P(s.kite.a1), P(s.kite.a2))); continue; }
       const from = r[r.length-1], to = P(s.to);
+      if (!from) throw new Error('No preceding point for segment ' + JSON.stringify(s));
       if (s.arc)   r.push(...arc(P(s.arc), from, to, s.ccw));
       if (s.along) r.push(...slice(Airspace.all[s.along].ring, from, to, s.sense));
       r.push(to);
     }
     const a = r[0], z = r[r.length-1];
-    if (a[0] === z[0] && a[1] === z[1]) r.pop();
+    if (a && z && Math.abs(a[0]-z[0]) < 1e-9 && Math.abs(a[1]-z[1]) < 1e-9) r.pop();
     return r;
   }
   lateral() {
@@ -140,6 +156,7 @@ class Airspace {
   }
   layer() {
     const t = TYPES[this.type] || TYPES.ref;
+    if (!this.ring.length) return L.featureGroup();
     return L.polygon(this.ring, {color: t.colour, weight: 1.5, dashArray: t.dash, fillOpacity: t.fill ?? 0.06})
             .bindPopup(this.popup(), {maxWidth: 400});
   }
@@ -233,11 +250,9 @@ const V_TMA_MD    = '8000 ft ALT – FL195';
 const V_TMA_HS    = '6000 ft ALT – FL195';
 const V_TMA_OB    = '3500 ft AMSL – FL195';
 
-/* Helper for circular airspaces — much shorter than writing path:[{circle:...}] each time */
 const C = (id, type, name, vert, c, r, freq=[], short=id) =>
   ({id, type, short, name, vert, freq, path:[{circle:{c, r}}]});
 
-/* ===================== AIRSPACE DEFINITIONS ===================== */
 const defs = [
   /* ============ FIRs ============ */
   { id:'FACA', type:'fir', short:'Cape Town FIR', name:'Cape Town Flight Information Region (FACA)',
@@ -352,7 +367,8 @@ const defs = [
           {to:'340900 0183430', arc:'335810 0183621'}] },
   { id:'FACT_TMA_A', type:'tma', short:'Cape Town TMA A', name:'Cape Town Terminal Area A (TMA A)',
     vert:'2500 – FL085', freq:F_CPT,
-    path:[{to:'334846.22 0185731.05', arc:'335810.82 0183618.19', ccw:true},
+    path:['335134.41 0181336.62',
+          {to:'334846.22 0185731.05', arc:'335810.82 0183618.19'},
           '335204.61 0185006.39',
           {to:'340318.23 0185040.48', arc:'335810.82 0183618.19'},
           '340500.67 0185502.80',
@@ -361,7 +377,7 @@ const defs = [
           {to:'342226.94 0182854.16', arc:'335810.82 0183618.19'},
           '341400 0182830','341100 0182600','340810 0182600','340600 0182850',
           '335530 0182730',
-          {to:'335134.41 0181336.62', arc:'335810.82 0183618.19'}] },
+          '335134.41 0181336.62'] },
   { id:'FACT_TMA_B', type:'tma', short:'Cape Town TMA B', name:'Cape Town Terminal Area B (TMA B)',
     vert:'4500 – FL085', freq:F_CPT,
     path:[{to:'335134.415 0181336.62', arc:'335810.82 0183618.19', ccw:true},
@@ -399,8 +415,7 @@ const defs = [
           '340434.89 0185356.71',
           {to:'335039.64 0185317.03', arc:'335810.82 0183618.19', ccw:true}] },
 
-  /* Cape Town SRA — East & West sectors (split by the line 330926S 0182252E / 335810.82S 0183618.19E / 344652S 0185000E).
-     North sector has explicit coords in ENR 2.2-37. */
+  /* Cape Town SRAs (East / West / North sectors) */
   { id:'CPT_SRA_E', type:'sra', short:'Cape Town SRA East', name:'Cape Town Special Rules Area — East Sector',
     vert:'GND – 2000 ft ALT (below FACT TMA A)', freq:['124.80'],
     path:['330926 0182252','335810.82 0183618.19','344652 0185000',
@@ -558,8 +573,9 @@ const defs = [
   /* ============ KIMBERLEY ============ */
   { id:'FAKM_CTR', type:'ctr', short:'Kimberley CTR', name:'Kimberley Control Zone',
     vert:'GND – 5500 ft ALT', freq:F_KM,
-    path:['284530 0244600',
-          {to:'284530 0244600', arc:'284759.81 0244537.32'}] },
+    // Approximated as a circle around the racecourse midpoint (source: two 6 NM circles at
+    // 284530S 0244600E and 285415S 0244200E, joined by outer tangents).
+    path:[{circle:{c:'284952 0244400', r:8}}] },
   { id:'FAKM_TMA_A', type:'tma', short:'Kimberley TMA A', name:'Kimberley Terminal Area A',
     vert:'5500 – FL145', freq:F_KM, path:[{circle:{c:'284759.81 0244537.32', r:20}}] },
   { id:'FAKM_TMA_B', type:'tma', short:'Kimberley TMA B', name:'Kimberley Terminal Area B',
@@ -1121,7 +1137,7 @@ const defs = [
           '260328 0273836','260220 0273627','255137 0273148','254210 0271455',
           '261510 0270820'] },
 
-  /* ============ FAPs — remaining ============ */
+  /* ============ FAPs ============ */
   C('FAP33','fap','FAP 33 Firgrove','GND – 1500 ft AGL','340430 0184740',1.2),
   { id:'FAP35', type:'fap', short:'FAP 35', name:'FAP 35 Langebaan Nature Reserve', vert:'GND – 500 ft AGL',
     path:['330545 0180100','330710 0180530','331250 0181000','331455 0180650',
@@ -1131,12 +1147,17 @@ const defs = [
   { id:'FAP64', type:'fap', short:'FAP 64', name:'FAP 64 Pelindaba', vert:'GND – 6500 ft ALT',
     path:['254651.01 0275355.72','254700.68 0275730.55','254851.97 0275727.45',
           '254926.63 0275532.35','254827.01 0275344.47','254651.01 0275355.72'] },
-  { id:'FAP145', type:'fap', short:'FAP 145', name:'FAP 145 Keurboom Nature Reserve', vert:'GND – 1000 ft AGL',
-    path:['340002 0232405','335755 0232235','335740 0232335','335625 0232405',
-          '335710 0232655','335820 0232550','335840 0232510','335855 0232520',
-          '335840 0232600','335950 0232610','335950 0232435','340002 0232405'] },
+  C('FAP24','fap','FAP 24 Ganspan','GND – 4000 ft AGL','275800 0244700',2),
+  C('FAP31','fap','FAP 31 Zomervelt (Welkom)','GND – 1000 ft AGL','280038 0265324',1.5),
+  C('FAP60','fap','FAP 60 Voortrekker Monument','GND – 1000 ft AGL','254635 0281035',0.5),
+  C('FAP66','fap','FAP 66 Pretoria ISCOR','GND – 1000 ft AGL','254611 0280756',0.5),
+  C('FAP67','fap','FAP 67 Vanderbijlpark','GND – 1000 ft AGL','264010 0274905',1),
+  C('FAP68','fap','FAP 68 Modderfontein','GND – 1000 ft AGL','260443 0280935',1),
+  C('FAP80','fap','FAP 80 Dantex Explosives','GND – 1000 ft AGL','261155 0275400',1),
+  C('FAP146','fap','FAP 146 Keurboom Bird Colony','GND – 1000 ft AGL','340210 0232310',0.5),
+  C('FAP177','fap','FAP 177 Roedtan Ammunition','GND – 4000 ft AGL','244330 0284700',1.5),
 
-  /* ============ FARs — remaining ============ */
+  /* ============ FARs ============ */
   { id:'FAR20', type:'far', short:'FAR 20', name:'FAR 20 Schmidtsdrif Military Range', vert:'GND – FL195',
     path:['283400 0240600','283600 0240700','285100 0240000','284700 0235400',
           '284200 0235600','284100 0235900','283700 0235700','283600 0240300',
@@ -1144,7 +1165,14 @@ const defs = [
   { id:'FAR25', type:'far', short:'FAR 25', name:'FAR 25 Ga-Tlhose / Maremане Range', vert:'GND – FL195',
     path:['273800 0233020','274300 0230420','281000 0230400','281000 0233500',
           '280000 0233730','273800 0233020'] },
+  C('FAR22','far','FAR 22 De Aar','GND – 4000 ft AGL','304010 0235720',2),
+  C('FAR23','far','FAR 23 Bottelduim','GND – FL195','274500 0213000',14),
+  C('FAR29','far','FAR 29 De Brug Range','GND – FL195','290530 0255400',8),
   C('FAR32','far','FAR 32 Mossel Bay Harbour','GND – 500 ft ALT','341010 0220915',0.3),
+  C('FAR36','far','FAR 36 Koeberg Nuclear','GND – 2000 ft AGL','334100 0182650',2.5),
+  C('FAR39','far','FAR 39 Simonstown Naval Base','GND – 1500 ft','341100 0182600',2.5),
+  C('FAR40','far','FAR 40 Donkergat','GND – FL030','330500 0175900',1.5),
+  C('FAR41','far','FAR 41 Skurwerug','GND – 1500 ft AGL','330054 0180314',1),
   C('FAR43','far','FAR 43 Table Bay Harbour','GND – 500 ft ALT','335500 0182600',0.6),
   { id:'FAR45_A', type:'far', short:'FAR 45 A', name:'FAR 45 Langebaanweg Military Area A', vert:'1500 ft AGL – FL195',
     path:['320540 0181900','320900 0184400','321100 0185340','331200 0185900',
@@ -1154,6 +1182,7 @@ const defs = [
   { id:'FAR45_B', type:'far', short:'FAR 45 B', name:'FAR 45 Langebaanweg Military Area B', vert:'FL120 – FL195',
     path:['331200 0185900','332900 0184700','333100 0183530','330900 0183700',
           {to:'331200 0185900', arc:'335810 0183621'}] },
+  C('FAR47','far','FAR 47 Oudtshoorn Range','GND – FL195','333203 0220840',3.8),
   C('FAR48','far','FAR 48 Saldanha Bay Harbour','GND – 500 ft ALT','325945 0175900',0.8),
   { id:'FAR49', type:'far', short:'FAR 49', name:'FAR 49 Port Nolloth Harbour', vert:'GND – 500 ft ALT',
     path:['291533 0164836','291427 0165118','291449 0165203','291556 0165203',
@@ -1170,10 +1199,25 @@ const defs = [
   { id:'FAR63', type:'far', short:'FAR 63', name:'FAR 63 Secunda Explosives Factory', vert:'GND – FL080',
     path:['263248 0291046','263417 0291054','263504 0290821','263312 0290812','263248 0291046'] },
   C('FAR65','far','FAR 65 Sasolburg','GND – 1000 ft AGL','264821 0275117',1.2),
+  { id:'FAR71', type:'far', short:'FAR 71', name:'FAR 71 Transvaal Military Middle Flying Area',
+    vert:'FL105 – FL195',
+    path:['220815 0293710','252600 0315900','251820.87 0312810.73',
+          {to:'250428.11 0305751.91', arc:'252251.70 0310640.05', ccw:true},
+          '250332.91 0305725.57',
+          {to:'252150.65 0304330.71', arc:'252251.70 0310640.05', ccw:true},
+          '252123.38 0303335.50','253311 0293614','244252 0302648','243558 0301839',
+          '254054 0291320',
+          {to:'251000 0282946', arc:'260831 0281415', ccw:true},
+          '242628 0290910','235940 0285450','220815 0293710'] },
+  { id:'FAR75', type:'far', short:'FAR 75', name:'FAR 75 Potchefstroom Range', vert:'GND – FL195',
+    path:[{circle:{c:'263800 0265900', r:7}}] },
   { id:'FAR76', type:'far', short:'FAR 76', name:'FAR 76 Roodewal', vert:'GND – FL195',
     path:['234305 0293000','232703.592 0293523.009','232702.102 0295730.771',
           '233858 0300154','234346.729 0294944.373','234832.859 0293738.144',
           '234305 0293000'] },
+  { id:'FAR78', type:'far', short:'FAR 78', name:'FAR 78 Kruger National Park', vert:'GND – FL105',
+    path:['222000 0303630','252600 0315900','252900 0314130','243600 0313500',
+          '241030 0312800','232900 0310200','222000 0303630'] },
   { id:'FAR82', type:'far', short:'FAR 82', name:'FAR 82 Pienaars River', vert:'GND – FL105',
     path:['252200 0281800','251600 0281815','251600 0282200','252100 0282200',
           '252200 0281800'] },
@@ -1184,7 +1228,7 @@ const defs = [
           '331154 0262738','331153 0263005'] },
   C('FAR87','far','FAR 87 East London Harbour','GND – 500 ft ALT','330045 0275500',0.8),
   C('FAR88','far','FAR 88 Port Elizabeth Harbour','GND – 500 ft ALT','335902 0253730',0.6),
-  C('FAR88_N', 'far','FAR 88 Ngqura Harbour','GND – 500 ft ALT','334950 0254100',0.8),
+  C('FAR88_N','far','FAR 88 Ngqura Harbour','GND – 500 ft ALT','334950 0254100',0.8),
   C('FAR105','far','FAR 105 Jan Kempdorp Demolition Range','GND – 4000 ft AGL','280430 0244300',2.5),
   { id:'FAR144', type:'far', short:'FAR 144', name:'FAR 144 Cape of Good Hope Nature Reserve',
     vert:'GND – 2000 ft ALT',
@@ -1213,6 +1257,10 @@ const defs = [
   { id:'FAR151', type:'far', short:'FAR 151', name:'FAR 151 Voorbaai', vert:'GND – 1000 ft ALT',
     path:['340844.01 0220610.84','340844.01 0220649.88','340900.23 0220649.88',
           '340900.23 0220610.84','340844.01 0220610.84'] },
+  { id:'FAR171', type:'far', name:'FAR 171 Wallmansthal Weapons Range', vert:'GND – FL140',
+    path:['252200 0281800','253100 0281740','253100 0282500','252100 0282200'] },
+  C('FAR172','far','FAR 172 Hartbeeshoek Comms','GND – 1000 ft AGL','255300 0274100',1),
+  C('FAR173','far','FAR 173 Boskop Munitions','GND – 7500 ft ALT','263400 0270950',1.8),
   { id:'FAR178', type:'far', short:'FAR 178', name:'FAR 178 Messina Weapons Range', vert:'GND – 1500 ft AGL',
     path:['221640 0300455','221835 0300730','222130 0300558','222030 0300358',
           '221800 0300420','221640 0300455'] },
@@ -1225,7 +1273,7 @@ const defs = [
   { id:'FAR181', type:'far', short:'FAR 181', name:'FAR 181 Gravelotte Restricted Area', vert:'GND – FL140',
     path:['234900 0305030','235500 0303300','234320 0303300','234900 0305030'] },
 
-  /* ============ FADs — remaining (mostly simple polygons) ============ */
+  /* ============ FADs ============ */
   { id:'FAD28', type:'fad', short:'FAD 28', name:'FAD 28 Bloemfontein Military Low Flying Area',
     vert:'GND – 1000 ft AGL',
     path:['291000 0263500','291218 0265024','291100 0270000','292400 0270000',
@@ -1289,6 +1337,9 @@ const defs = [
     vert:'GND – FL100', freq:['124.80'],
     path:['255630 0272900','254800 0271420','254020 0271500','254130 0272900',
           '255630 0272900'] },
+  C('FAD71','fad','FAD 71 Hartebeespoort','GND – 7600 ft ALT','254230 0275300',2),
+  C('FAD84','fad','FAD 84 Bethal Explosives','GND – 2000 ft AGL','262730 0293200',1.5),
+  C('FAD89','fad','FAD 89 Sada Military Range','GND – 3500 ft AGL','320810 0264500',3),
   { id:'FAD106', type:'fad', short:'FAD 106', name:'FAD 106 Bloemfontein / New Tempe Flying Area',
     vert:'GND – 6500 ft ALT',
     path:['285225.31 0255954.52','284059.98 0254600','283907.05 0254725.75',
@@ -1372,6 +1423,7 @@ const defs = [
     vert:'GND – 6500 ft ALT', freq:['124.40'],
     path:['261900 0280350','261930 0280000','262800 0280000','262920 0280330',
           '262100 0280600','261900 0280350'] },
+  C('FAD184','fad','FAD 184 Syferfontein Aerobatic Area','GND – FL090','262047 0274631',0.6),
   { id:'FAD185', type:'fad', short:'FAD 185', name:'FAD 185 East Rand Flying Training Area',
     vert:'GND – 7600 ft ALT', freq:['124.40'],
     path:['262200 0284500','270200 0283600','270000 0290400','262600 0285500',
@@ -1421,9 +1473,7 @@ const defs = [
   { id:'FAD201', type:'fad', short:'FAD 201', name:'FAD 201 Newcastle General Flying Area',
     vert:'GND – 9000 ft ALT',
     path:['273955 0301743','280023 0300304','281314 0304013','275848 0304350',
-          '273955 0301743'] },
-  { id:'FAD184', type:'fad', short:'FAD 184', name:'FAD 184 Syferfontein Aerobatic Area',
-    vert:'GND – FL090', path:[{circle:{c:'262047 0274631', r:0.6}}] }
+          '273955 0301743'] }
 ];
 
 defs.forEach(o => new Airspace(o));
