@@ -551,16 +551,19 @@ document.getElementById('btn-basemap').addEventListener('click', e => {
 map.on('click', clearSelection);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') clearSelection(); });
 
-/* ============ LIVE TRAFFIC (OpenSky Network) ============ */
-/* OpenSky is the most reliable free ADS-B API that sends CORS headers,
-   so it works directly from a browser without a proxy. */
-const LIVE_REFRESH_MS = 60000; // 60 s keeps anonymous credit use reasonable.
+/* ============ LIVE TRAFFIC (OpenSky via Cloudflare Worker Proxy) ============ */
+/* OpenSky blocks direct browser requests from other domains.
+   This routes the call through a free Cloudflare Worker that adds the CORS header. */
+const LIVE_REFRESH_MS = 60000; // 60 s keeps anonymous OpenSky credit use reasonable.
 const SOUTH_AFRICA_BBOX = {
   lamin: -35.0,   // south
   lomin: 16.0,    // west
   lamax: -22.0,   // north
   lomax: 33.0     // east
 };
+
+// ⚠️ REPLACE THIS with your own Cloudflare Worker URL (see instructions below).
+const PROXY_URL = 'https://your-worker-name.your-subdomain.workers.dev/?url=';
 
 const liveTrafficLayer = L.layerGroup().addTo(map);
 let liveTimer = null;
@@ -589,11 +592,12 @@ async function refreshLiveTraffic() {
   setLiveButton('loading');
 
   const { lamin, lomin, lamax, lomax } = SOUTH_AFRICA_BBOX;
-  const url = `https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
+  const openskyUrl = `https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
+  const proxiedUrl = PROXY_URL + encodeURIComponent(openskyUrl);
 
   try {
-    const res = await fetch(url, {cache: 'no-store'});
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetch(proxiedUrl, {cache: 'no-store'});
+    if (!res.ok) throw new Error(`Proxy returned HTTP ${res.status}`);
     const data = await res.json();
 
     liveTrafficLayer.clearLayers();
@@ -636,7 +640,7 @@ async function refreshLiveTraffic() {
     liveCount = data.states.length;
     liveLastUpdate = new Date();
     setLiveButton('ok');
-    console.log(`OpenSky: ${liveCount} aircraft over South Africa.`);
+    console.log(`Proxy → OpenSky: ${liveCount} aircraft over South Africa.`);
   } catch (err) {
     console.warn('Live traffic error:', err.message);
     setLiveButton('error', err.message);
@@ -672,7 +676,7 @@ const liveBtn = document.createElement('button');
 liveBtn.className = 'map-btn';
 liveBtn.id = 'btn-live-traffic';
 liveBtn.textContent = '✈️ Live: …';
-liveBtn.title = 'Live aircraft over South Africa (OpenSky Network)';
+liveBtn.title = 'Live aircraft over South Africa (OpenSky via proxy)';
 liveBtn.addEventListener('click', () => {
   liveOn = !liveOn;
   if (liveOn) { setLiveButton('loading'); startLiveTraffic(); }
