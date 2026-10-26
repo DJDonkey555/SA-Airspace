@@ -551,29 +551,16 @@ document.getElementById('btn-basemap').addEventListener('click', e => {
 map.on('click', clearSelection);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') clearSelection(); });
 
-/* ============ LIVE TRAFFIC (Multi-Network Merge) ============ */
-/* Combines adsb.lol + adsb.fi + airplanes.live for best free coverage over SA.
-   All three are free, no API key, CORS-enabled. De-duped by ICAO hex. */
-const LIVE_REFRESH_MS = 30000; // 30s. Bump to 60000 if you want to be gentler.
-const ADSB_POINTS = [
-  {lat: -26.10, lon: 28.20, dist: 250}, // Johannesburg / Pretoria
-  {lat: -33.97, lon: 18.60, dist: 250}, // Cape Town
-  {lat: -29.60, lon: 31.10, dist: 250}, // Durban
-  {lat: -28.40, lon: 21.30, dist: 250}, // Upington / Northern Cape
-  {lat: -33.99, lon: 25.60, dist: 250}  // Port Elizabeth / Eastern Cape
-];
-
-const NETWORKS = [
-  { name: 'adsb.lol',
-    url: 'https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{dist}',
-    extract: d => d.ac || [] },
-  { name: 'adsb.fi',
-    url: 'https://opendata.adsb.fi/api/v3/lat/{lat}/lon/{lon}/dist/{dist}',
-    extract: d => d.ac || [] },
-  { name: 'airplanes.live',
-    url: 'https://api.airplanes.live/v2/point/{lat}/{lon}/{dist}',
-    extract: d => d.ac || [] }
-];
+/* ============ LIVE TRAFFIC (OpenSky Network) ============ */
+/* OpenSky is the most reliable free ADS-B API that sends CORS headers,
+   so it works directly from a browser without a proxy. */
+const LIVE_REFRESH_MS = 60000; // 60 s keeps anonymous credit use reasonable.
+const SOUTH_AFRICA_BBOX = {
+  lamin: -35.0,   // south
+  lomin: 16.0,    // west
+  lamax: -22.0,   // north
+  lomax: 33.0     // east
+};
 
 const liveTrafficLayer = L.layerGroup().addTo(map);
 let liveTimer = null;
@@ -581,7 +568,6 @@ let liveOn = true;
 let liveCount = 0;
 let liveLastUpdate = null;
 let liveBusy = false;
-let liveSourceCounts = {};
 
 function planeIconFor(track) {
   const rot = Number.isFinite(track) ? track : 0;
@@ -597,95 +583,60 @@ function planeIconFor(track) {
   });
 }
 
-async function fetchNetwork(net, pt) {
-  const url = net.url
-    .replace('{lat}', pt.lat)
-    .replace('{lon}', pt.lon)
-    .replace('{dist}', pt.dist);
-  const res = await fetch(url, {cache: 'no-store'});
-  if (!res.ok) throw new Error(`${net.name} HTTP ${res.status}`);
-  const data = await res.json();
-  return net.extract(data);
-}
-
 async function refreshLiveTraffic() {
   if (!liveOn || liveBusy) return;
   liveBusy = true;
   setLiveButton('loading');
 
+  const { lamin, lomin, lamax, lomax } = SOUTH_AFRICA_BBOX;
+  const url = `https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
+
   try {
-    // Fire every (network × point) combination in parallel.
-    const jobs = [];
-    for (const net of NETWORKS) {
-      for (const pt of ADSB_POINTS) {
-        jobs.push(
-          fetchNetwork(net, pt)
-            .then(arr => ({ok: true, net: net.name, arr}))
-            .catch(err => ({ok: false, net: net.name, err: err.message}))
-        );
-      }
-    }
-    const results = await Promise.all(jobs);
-
-    const byHex = new Map();
-    const perSource = {};
-    let successes = 0;
-
-    for (const r of results) {
-      if (!r.ok) continue;
-      successes++;
-      perSource[r.net] = (perSource[r.net] || 0) + r.arr.length;
-      for (const ac of r.arr) {
-        if (!ac || !ac.hex || ac.lat == null || ac.lon == null) continue;
-        const existing = byHex.get(ac.hex);
-        if (!existing) {
-          byHex.set(ac.hex, ac);
-        } else {
-          // Prefer the record with a callsign, then the freshest position.
-          const exFresh = existing.seen_pos ?? 9999;
-          const acFresh = ac.seen_pos ?? 9999;
-          if ((!existing.flight && ac.flight) || (acFresh < exFresh)) {
-            byHex.set(ac.hex, ac);
-          }
-        }
-      }
-    }
-
-    if (successes === 0) throw new Error('All data sources unreachable');
+    const res = await fetch(url, {cache: 'no-store'});
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
 
     liveTrafficLayer.clearLayers();
-    for (const ac of byHex.values()) {
-      const altFt = typeof ac.alt_baro === 'number' ? ac.alt_baro : (ac.alt_geom ?? null);
-      const alt = altFt != null
-        ? `${Math.round(altFt).toLocaleString()} ft`
-        : (ac.alt_baro === 'ground' ? 'On ground' : 'N/A');
-      const speed = ac.gs != null ? `${Math.round(ac.gs)} kt` : 'N/A';
-      const heading = ac.track != null ? Math.round(ac.track) : null;
-      const callsign = (ac.flight || '').trim() || '—';
-      const reg = ac.r || '—';
-      const type = ac.t || '—';
 
-      const marker = L.marker([ac.lat, ac.lon], {icon: planeIconFor(heading)});
+    if (!data.states || data.states.length === 0) {
+      liveCount = 0;
+      liveLastUpdate = new Date();
+      setLiveButton('ok');
+      return;
+    }
+
+    for (const s of data.states) {
+      const lat = s[6];
+      const lon = s[5];
+      if (lat == null || lon == null) continue; // skip missing positions
+
+      const callsign = (s[1] || '').trim() || s[0] || 'Unknown';
+      const altitude = s[7] != null ? `${Math.round(s[7])} m` : 'N/A';
+      const speed = s[9] != null ? `${Math.round(s[9] * 3.6)} km/h` : 'N/A';
+      const heading = s[10] != null ? s[10] : 0;
+      const squawk = s[14] || '';
+      const onGround = s[8] === true;
+
+      const marker = L.marker([lat, lon], {icon: planeIconFor(heading)});
       marker.bindPopup(`
         <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;line-height:1.5;min-width:200px">
           <div style="font-weight:700;font-size:13px;margin-bottom:4px">${escapeHtml(callsign)}</div>
-          <div><span style="color:#6b7280">Registration:</span> ${escapeHtml(reg)}</div>
-          <div><span style="color:#6b7280">Type:</span> ${escapeHtml(type)}</div>
-          <div><span style="color:#6b7280">Altitude:</span> ${alt}</div>
-          <div><span style="color:#6b7280">Ground speed:</span> ${speed}</div>
-          <div><span style="color:#6b7280">Track:</span> ${heading != null ? heading + '°' : 'N/A'}</div>
-          ${ac.squawk ? `<div><span style="color:#6b7280">Squawk:</span> ${escapeHtml(ac.squawk)}</div>` : ''}
+          <div><span style="color:#6b7280">ICAO24:</span> ${escapeHtml(s[0])}</div>
+          <div><span style="color:#6b7280">Altitude:</span> ${altitude}</div>
+          <div><span style="color:#6b7280">Speed:</span> ${speed}</div>
+          <div><span style="color:#6b7280">Heading:</span> ${Math.round(heading)}°</div>
+          ${squawk ? `<div><span style="color:#6b7280">Squawk:</span> ${escapeHtml(squawk)}</div>` : ''}
+          ${onGround ? `<div style="color:#f59e0b;font-weight:600">On ground</div>` : ''}
         </div>
       `, {maxWidth: 260});
 
       liveTrafficLayer.addLayer(marker);
     }
 
-    liveCount = byHex.size;
-    liveSourceCounts = perSource;
+    liveCount = data.states.length;
     liveLastUpdate = new Date();
     setLiveButton('ok');
-    console.log('Live traffic merged:', perSource, '→', liveCount, 'unique aircraft');
+    console.log(`OpenSky: ${liveCount} aircraft over South Africa.`);
   } catch (err) {
     console.warn('Live traffic error:', err.message);
     setLiveButton('error', err.message);
@@ -701,10 +652,7 @@ function setLiveButton(mode, msg) {
   if (mode === 'loading') { btn.textContent = '✈️ Updating…'; return; }
   if (mode === 'error') { btn.textContent = '✈️ Live: error'; btn.title = msg || 'Could not fetch live traffic'; return; }
   btn.textContent = `✈️ Live: ${liveCount}`;
-  btn.title = liveLastUpdate
-    ? `Last update: ${liveLastUpdate.toLocaleTimeString()}\n` +
-      Object.entries(liveSourceCounts).map(([k, v]) => `${k}: ${v}`).join('\n')
-    : '';
+  btn.title = liveLastUpdate ? `Last update: ${liveLastUpdate.toLocaleTimeString()}` : '';
 }
 
 function startLiveTraffic() {
@@ -724,7 +672,7 @@ const liveBtn = document.createElement('button');
 liveBtn.className = 'map-btn';
 liveBtn.id = 'btn-live-traffic';
 liveBtn.textContent = '✈️ Live: …';
-liveBtn.title = 'Live aircraft over South Africa (adsb.lol + adsb.fi + airplanes.live)';
+liveBtn.title = 'Live aircraft over South Africa (OpenSky Network)';
 liveBtn.addEventListener('click', () => {
   liveOn = !liveOn;
   if (liveOn) { setLiveButton('loading'); startLiveTraffic(); }
