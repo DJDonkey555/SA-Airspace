@@ -13,8 +13,6 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:var(--t1)}
 #app{display:flex;height:100vh;overflow:hidden}
-
-/* Sidebar */
 #sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column}
 #sidebar-header{padding:14px 18px 12px;border-bottom:1px solid var(--border)}
 #sidebar-header h1{font-size:14px;font-weight:700;letter-spacing:-.01em}
@@ -41,13 +39,9 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ro
 .result-name{font-size:12px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .result-meta{font-size:10px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .result-freq{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:9px;color:#1e40af;margin-top:2px}
-
-/* Map */
 #map-wrap{flex:1;position:relative}
 #map{position:absolute;inset:0}
 .leaflet-tile-pane{filter:saturate(.25) brightness(1.05) contrast(.85);opacity:.8}
-
-/* Popup */
 .leaflet-popup-content-wrapper{border-radius:8px;padding:0!important;box-shadow:0 10px 40px rgba(0,0,0,.18),0 2px 8px rgba(0,0,0,.08);overflow:hidden}
 .leaflet-popup-content{margin:0!important;padding:0;font-family:inherit;max-height:500px;overflow-y:auto}
 .leaflet-popup-tip{box-shadow:none}
@@ -68,30 +62,20 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ro
 .as-popup-desc{font-size:11px;color:#374151;max-height:200px;overflow-y:auto;padding:4px 0;line-height:1.5}
 .as-popup-desc table{border-collapse:collapse;width:100%}
 .as-popup-desc td,.as-popup-desc th{padding:2px 4px;border:1px solid var(--border)}
-
-/* Map controls */
 #map-controls{position:absolute;top:12px;right:12px;z-index:400;display:flex;flex-direction:column;gap:6px}
 .map-btn{background:#fff;border:1px solid var(--border);border-radius:6px;padding:7px 11px;font-size:12px;font-weight:500;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08);font-family:inherit;color:var(--t1);transition:background .15s,transform .05s}
 .map-btn:hover{background:#f9fafb}
 .map-btn:active{transform:scale(.98)}
-
-/* Loading */
 #loading{position:absolute;inset:0;background:#fff;z-index:5000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .3s}
 #loading.hidden{opacity:0;pointer-events:none}
 .spinner{width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#3b82f6;border-radius:50%;animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 #loading-text{font-size:13px;color:var(--t2)}
 #loading-error{max-width:420px;padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#991b1b;font-size:12px;line-height:1.5;white-space:pre-wrap}
-
-/* Airport labels */
 .airport-label{background:transparent!important;border:none!important;box-shadow:none!important;font-family:-apple-system,sans-serif!important;font-size:10px!important;font-weight:600!important;color:#1e293b!important;padding:0!important;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff!important;letter-spacing:.02em!important}
 .airport-label::before{display:none!important}
-
-/* Live aircraft icons */
-.live-plane-icon{background:transparent!important;border:none!important;box-shadow:none!important;display:flex!important;align-items:center;justify-content:center}
+.live-plane-icon{background:transparent!important;border:none!important;box-shadow:none!important;display:flex!important;align-items:center!important;justify-content:center!important}
 .live-plane-icon svg{filter:drop-shadow(0 0 2px rgba(0,0,0,.45))}
-
-/* Mobile */
 @media(max-width:768px){#app{flex-direction:column}#sidebar{width:100%;min-width:0;max-height:40vh;border-right:none;border-bottom:1px solid var(--border)}#map-wrap{min-height:60vh}}
 </style>
 </head>
@@ -126,6 +110,8 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ro
   </main>
 </div>
 <script>
+console.log('[Init] script start');
+
 /* ============ CONFIG ============ */
 const KMZ_FILENAME = 'RSA DATA -01OCT2026.kmz';
 
@@ -515,10 +501,10 @@ async function loadKMZ() {
     renderFilters();
     renderResults();
     loading.classList.add('hidden');
-    console.log(`Loaded ${state.items.length} airspaces.`);
+    console.log(`[KMZ] Loaded ${state.items.length} airspaces.`);
 
   } catch (err) {
-    console.error(err);
+    console.error('[KMZ] Error:', err);
     loading.innerHTML = `<div id="loading-error"><b>Could not load the airspace file</b><br><br>${escapeHtml(err.message)}\n\nChecklist:\n1. "${KMZ_FILENAME}" must be in the same folder as index.html\n2. Page must be served over HTTP (not file://)\n3. Check browser console (F12) for details</div>`;
   }
 }
@@ -551,17 +537,17 @@ document.getElementById('btn-basemap').addEventListener('click', e => {
 map.on('click', clearSelection);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') clearSelection(); });
 
-/* ============ LIVE TRAFFIC (OpenSky via Cloudflare Worker) ============ */
-const LIVE_REFRESH_MS = 60000;
+/* ============ LIVE TRAFFIC ============ */
+const LIVE_REFRESH_MS = 20000;
+const FETCH_TIMEOUT_MS = 25000;
 const SOUTH_AFRICA_BBOX = {
-  lamin: -35.0,
-  lomin: 16.0,
-  lamax: -22.0,
-  lomax: 33.0
+  lamin: -35.0, lomin: 16.0, lamax: -22.0, lomax: 33.0
 };
 
-// ✅ Your Cloudflare Worker proxy — already plugged in.
+// ✅ Your Worker URL
 const PROXY_URL = 'https://flightradar.lategan-rudolph.workers.dev/?url=';
+
+console.log('[Live] PROXY_URL =', PROXY_URL);
 
 const liveTrafficLayer = L.layerGroup().addTo(map);
 let liveTimer = null;
@@ -574,13 +560,13 @@ function planeIconFor(track) {
   const rot = Number.isFinite(track) ? track : 0;
   return L.divIcon({
     className: 'live-plane-icon',
-    html: `<svg viewBox="0 0 24 24" width="20" height="20">
+    html: `<svg viewBox="0 0 24 24" width="22" height="22">
       <path transform="rotate(${rot} 12 12)"
         d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"
-        fill="#0f172a" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
+        fill="#dc2626" stroke="#ffffff" stroke-width="1.3" stroke-linejoin="round"/>
     </svg>`,
-    iconSize: [20, 20],
-    iconAnchor: [10, 10]
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
   });
 }
 
@@ -593,10 +579,28 @@ async function refreshLiveTraffic() {
   const openskyUrl = `https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
   const proxiedUrl = PROXY_URL + encodeURIComponent(openskyUrl);
 
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+
   try {
-    const res = await fetch(proxiedUrl, {cache: 'no-store'});
-    if (!res.ok) throw new Error(`Proxy returned HTTP ${res.status}`);
-    const data = await res.json();
+    console.log('[Live] fetching', proxiedUrl.slice(0, 120) + '…');
+    const res = await fetch(proxiedUrl, { cache: 'no-store', signal: ctrl.signal });
+    clearTimeout(timer);
+    console.log('[Live] HTTP', res.status, res.statusText);
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status} — ${body.slice(0, 120)}`);
+    }
+
+    const text = await res.text();
+    console.log('[Live] body length', text.length, 'starts with:', text.slice(0, 60));
+
+    let data;
+    try { data = JSON.parse(text); }
+    catch (e) { throw new Error(`Bad JSON: "${text.slice(0, 80)}"`); }
+
+    console.log('[Live] parsed', { states: data.states ? data.states.length : 'none', count: data.count, error: data.error });
 
     liveTrafficLayer.clearLayers();
 
@@ -607,41 +611,50 @@ async function refreshLiveTraffic() {
       return;
     }
 
+    let added = 0, skipped = 0, errors = 0;
     for (const s of data.states) {
-      const lat = s[6];
-      const lon = s[5];
-      if (lat == null || lon == null) continue;
+      try {
+        const lat = s[6];
+        const lon = s[5];
+        if (lat == null || lon == null) { skipped++; continue; }
 
-      const callsign = (s[1] || '').trim() || s[0] || 'Unknown';
-      const altitude = s[7] != null ? `${Math.round(s[7])} m` : 'N/A';
-      const speed = s[9] != null ? `${Math.round(s[9] * 3.6)} km/h` : 'N/A';
-      const heading = s[10] != null ? s[10] : 0;
-      const squawk = s[14] || '';
-      const onGround = s[8] === true;
+        const callsign = (s[1] || '').trim() || s[0] || 'Unknown';
+        const altitude = s[7] != null ? `${Math.round(s[7])} m` : 'N/A';
+        const speed = s[9] != null ? `${Math.round(s[9] * 3.6)} km/h` : 'N/A';
+        const heading = s[10] != null ? s[10] : 0;
+        const squawk = s[14] || '';
+        const onGround = s[8] === true;
 
-      const marker = L.marker([lat, lon], {icon: planeIconFor(heading)});
-      marker.bindPopup(`
-        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;line-height:1.5;min-width:200px">
-          <div style="font-weight:700;font-size:13px;margin-bottom:4px">${escapeHtml(callsign)}</div>
-          <div><span style="color:#6b7280">ICAO24:</span> ${escapeHtml(s[0])}</div>
-          <div><span style="color:#6b7280">Altitude:</span> ${altitude}</div>
-          <div><span style="color:#6b7280">Speed:</span> ${speed}</div>
-          <div><span style="color:#6b7280">Heading:</span> ${Math.round(heading)}°</div>
-          ${squawk ? `<div><span style="color:#6b7280">Squawk:</span> ${escapeHtml(squawk)}</div>` : ''}
-          ${onGround ? `<div style="color:#f59e0b;font-weight:600">On ground</div>` : ''}
-        </div>
-      `, {maxWidth: 260});
+        const marker = L.marker([lat, lon], { icon: planeIconFor(heading) });
+        marker.bindPopup(`
+          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;line-height:1.5;min-width:200px">
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px">${escapeHtml(callsign)}</div>
+            <div><span style="color:#6b7280">ICAO24:</span> ${escapeHtml(s[0])}</div>
+            <div><span style="color:#6b7280">Altitude:</span> ${altitude}</div>
+            <div><span style="color:#6b7280">Speed:</span> ${speed}</div>
+            <div><span style="color:#6b7280">Heading:</span> ${Math.round(heading)}°</div>
+            ${squawk ? `<div><span style="color:#6b7280">Squawk:</span> ${escapeHtml(squawk)}</div>` : ''}
+            ${onGround ? `<div style="color:#f59e0b;font-weight:600">On ground</div>` : ''}
+          </div>
+        `, { maxWidth: 260 });
 
-      liveTrafficLayer.addLayer(marker);
+        liveTrafficLayer.addLayer(marker);
+        added++;
+      } catch (e) {
+        errors++;
+        console.warn('[Live] bad state', s, e);
+      }
     }
 
-    liveCount = data.states.length;
+    console.log(`[Live] added ${added} markers (skipped ${skipped}, errors ${errors})`);
+    liveCount = added;
     liveLastUpdate = new Date();
     setLiveButton('ok');
-    console.log(`Proxy → OpenSky: ${liveCount} aircraft over South Africa.`);
   } catch (err) {
-    console.warn('Live traffic error:', err.message);
-    setLiveButton('error', err.message);
+    clearTimeout(timer);
+    const msg = err.name === 'AbortError' ? 'Timed out after 25s' : err.message;
+    console.error('[Live] error:', msg, err);
+    setLiveButton('error', msg);
   } finally {
     liveBusy = false;
   }
@@ -649,16 +662,17 @@ async function refreshLiveTraffic() {
 
 function setLiveButton(mode, msg) {
   const btn = document.getElementById('btn-live-traffic');
-  if (!btn) return;
+  if (!btn) { console.warn('[Live] btn-live-traffic not found in DOM'); return; }
   if (!liveOn) { btn.textContent = '✈️ Live: OFF'; btn.title = ''; return; }
-  if (mode === 'loading') { btn.textContent = '✈️ Updating…'; return; }
-  if (mode === 'error') { btn.textContent = '✈️ Live: error'; btn.title = msg || 'Could not fetch live traffic'; return; }
+  if (mode === 'loading') { btn.textContent = '✈️ Updating…'; btn.title = 'Fetching…'; return; }
+  if (mode === 'error') { btn.textContent = '✈️ Live: error'; btn.title = msg || 'Unknown error'; console.warn('[Live] button error:', msg); return; }
   btn.textContent = `✈️ Live: ${liveCount}`;
   btn.title = liveLastUpdate ? `Last update: ${liveLastUpdate.toLocaleTimeString()}` : '';
 }
 
 function startLiveTraffic() {
   if (liveTimer) clearInterval(liveTimer);
+  console.log('[Live] starting, refresh every', LIVE_REFRESH_MS, 'ms');
   refreshLiveTraffic();
   liveTimer = setInterval(refreshLiveTraffic, LIVE_REFRESH_MS);
 }
@@ -673,13 +687,14 @@ const liveBtn = document.createElement('button');
 liveBtn.className = 'map-btn';
 liveBtn.id = 'btn-live-traffic';
 liveBtn.textContent = '✈️ Live: …';
-liveBtn.title = 'Live aircraft over South Africa (OpenSky via proxy)';
+liveBtn.title = 'Live aircraft over South Africa';
 liveBtn.addEventListener('click', () => {
   liveOn = !liveOn;
   if (liveOn) { setLiveButton('loading'); startLiveTraffic(); }
   else { stopLiveTraffic(); setLiveButton('off'); }
 });
 document.getElementById('map-controls').appendChild(liveBtn);
+console.log('[Live] button added');
 
 startLiveTraffic();
 
