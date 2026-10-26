@@ -551,19 +551,17 @@ document.getElementById('btn-basemap').addEventListener('click', e => {
 map.on('click', clearSelection);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') clearSelection(); });
 
-/* ============ LIVE TRAFFIC (OpenSky via Cloudflare Worker Proxy) ============ */
-/* OpenSky blocks direct browser requests from other domains.
-   This routes the call through a free Cloudflare Worker that adds the CORS header. */
-const LIVE_REFRESH_MS = 60000; // 60 s keeps anonymous OpenSky credit use reasonable.
+/* ============ LIVE TRAFFIC (OpenSky via Cloudflare Worker) ============ */
+const LIVE_REFRESH_MS = 60000;
 const SOUTH_AFRICA_BBOX = {
-  lamin: -35.0,   // south
-  lomin: 16.0,    // west
-  lamax: -22.0,   // north
-  lomax: 33.0     // east
+  lamin: -35.0,
+  lomin: 16.0,
+  lamax: -22.0,
+  lomax: 33.0
 };
 
-// ⚠️ REPLACE THIS with your own Cloudflare Worker URL (see instructions below).
-const PROXY_URL = 'https://your-worker-name.your-subdomain.workers.dev/?url=';
+// ✅ Your Cloudflare Worker proxy — already plugged in.
+const PROXY_URL = 'https://flightradar.lategan-rudolph.workers.dev/?url=';
 
 const liveTrafficLayer = L.layerGroup().addTo(map);
 let liveTimer = null;
@@ -612,7 +610,7 @@ async function refreshLiveTraffic() {
     for (const s of data.states) {
       const lat = s[6];
       const lon = s[5];
-      if (lat == null || lon == null) continue; // skip missing positions
+      if (lat == null || lon == null) continue;
 
       const callsign = (s[1] || '').trim() || s[0] || 'Unknown';
       const altitude = s[7] != null ? `${Math.round(s[7])} m` : 'N/A';
@@ -671,7 +669,6 @@ function stopLiveTraffic() {
   liveCount = 0;
 }
 
-/* Live traffic toggle button */
 const liveBtn = document.createElement('button');
 liveBtn.className = 'map-btn';
 liveBtn.id = 'btn-live-traffic';
@@ -684,7 +681,6 @@ liveBtn.addEventListener('click', () => {
 });
 document.getElementById('map-controls').appendChild(liveBtn);
 
-/* Kick off live traffic */
 startLiveTraffic();
 
 /* ============ START ============ */
